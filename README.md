@@ -11,12 +11,14 @@ Install `faltoobot` however you prefer, such as `uv`, `pipx`, or `brew`.
 
 ## Setup
 
-With any plugin manager, add this repo to your runtime path. For a manual smoke test:
+With `vim.pack`, add this to your `init.lua`:
 
-```vim
-:set rtp+=/Users/pratyush/Websites/faltoo.nvim
-:lua require("faltoo").setup()
+```lua
+vim.pack.add({ "https://github.com/pratyushmittal/faltoo.nvim" })
+require("faltoo").setup()
 ```
+
+With any other plugin manager, install `https://github.com/pratyushmittal/faltoo.nvim` and call `require("faltoo").setup()`.
 
 ## Commands
 
