@@ -1,0 +1,41 @@
+repos:
+  - repo: https://github.com/JohnnyMorganz/StyLua
+    rev: v2.5.2
+    hooks:
+      - id: stylua-github
+        name: stylua fix
+        args: [--indent-type, Spaces, --indent-width, "2"]
+        files: ^(lua|plugin)/.*\.lua$
+
+  - repo: local
+    hooks:
+      - id: lua-ls-check
+        name: lua_ls check
+        entry: >-
+          bash -c 'set -euo pipefail;
+          if command -v lua-language-server >/dev/null 2>&1; then lua_ls="$(command -v lua-language-server)";
+          elif [ -x "$HOME/.local/share/nvim/mason/bin/lua-language-server" ]; then lua_ls="$HOME/.local/share/nvim/mason/bin/lua-language-server";
+          else echo "lua-language-server not found. Install it with Mason or your package manager." >&2; exit 1; fi;
+          rm -rf .lua_ls_check;
+          "$lua_ls" --check=. --checklevel=Warning --logpath=.lua_ls_check --configpath=.luarc.json'
+        language: system
+        pass_filenames: false
+        files: ^(lua|plugin)/.*\.lua$
+
+      - id: ruff-check
+        name: ruff check fix
+        entry: uvx ruff check --fix
+        language: system
+        files: ^python/faltoo_bridge\.py$
+
+      - id: ruff-format
+        name: ruff format
+        entry: uvx ruff format
+        language: system
+        files: ^python/faltoo_bridge\.py$
+
+      - id: ty-check
+        name: ty check
+        entry: uvx --with faltoobot ty check --no-progress
+        language: system
+        files: ^python/faltoo_bridge\.py$
