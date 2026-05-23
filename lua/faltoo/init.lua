@@ -15,14 +15,32 @@ local function workspace()
   return vim.fn.getcwd()
 end
 
+local function inside_review_root(path)
+  local git_dir = vim.fs.find(".git", { path = workspace(), upward = true })[1]
+  local root_path = git_dir and vim.fs.dirname(git_dir) or workspace()
+  local root = vim.fs.normalize(vim.fn.fnamemodify(root_path, ":p"))
+  local normalized = vim.fs.normalize(vim.fn.fnamemodify(path, ":p"))
+  return normalized == root or vim.startswith(normalized, root .. "/")
+end
+
 local function normal_buffer(buf)
   if not vim.api.nvim_buf_is_valid(buf) or vim.bo[buf].buftype ~= "" then
+    return false
+  end
+
+  if not vim.bo[buf].buflisted then
+    -- Plugin scratch buffers are often normal buftype but intentionally unlisted.
     return false
   end
 
   local name = vim.api.nvim_buf_get_name(buf)
   if name == "" or vim.fn.filereadable(name) ~= 1 then
     -- Review mode should not lock synthetic plugin buffers like org agenda.
+    return false
+  end
+
+  if not inside_review_root(name) then
+    -- Open plugin/user files outside the current review workspace should be left alone.
     return false
   end
 
@@ -42,28 +60,31 @@ local function save_buffer_options(buf)
   }
 end
 
-local function make_readonly(buf)
-  if not normal_buffer(buf) then
+local keymaps_api = require("faltoo.keymaps")
+
+local function restore_buffer(buf)
+  local opts = state.saved[buf]
+  if not opts then
     return
   end
+  if vim.api.nvim_buf_is_valid(buf) then
+    vim.bo[buf].readonly = opts.readonly
+    vim.bo[buf].modifiable = opts.modifiable
+  end
+
+  state.saved[buf] = nil
+  keymaps_api.unmap_buffer(buf)
+end
+
+local function make_readonly(buf)
   save_buffer_options(buf)
   vim.bo[buf].readonly = true
   vim.bo[buf].modifiable = false
 end
 
----@param opts { readonly: boolean, modifiable: boolean }
-local function restore_buffer(buf, opts)
-  if not vim.api.nvim_buf_is_valid(buf) then
-    return
-  end
-  vim.bo[buf].readonly = opts.readonly
-  vim.bo[buf].modifiable = opts.modifiable
-end
-
 local bridge_api = require("faltoo.bridge")
 local comments_api = require("faltoo.comments")
 local git_api = require("faltoo.git")
-local keymaps_api = require("faltoo.keymaps")
 local modals = require("faltoo.modals")
 local history_modal = require("faltoo.modals.history")
 local quit_guard = require("faltoo.quit")
@@ -445,20 +466,24 @@ function M.on()
     if normal_buffer(buf) then
       make_readonly(buf)
       keymaps_api.map_buffer(buf, keymap_callbacks())
+      comments_api.refresh()
     end
   end
   vim.api.nvim_create_augroup(review_augroup, { clear = true })
-  vim.api.nvim_create_autocmd({ "BufEnter", "BufWinEnter" }, {
+  -- FileType catches plugins that change buffer ownership after opening.
+  vim.api.nvim_create_autocmd({ "BufEnter", "BufWinEnter", "FileType" }, {
     group = review_augroup,
     callback = function(event)
       if normal_buffer(event.buf) then
         make_readonly(event.buf)
         keymaps_api.map_buffer(event.buf, keymap_callbacks())
         comments_api.refresh()
+        return
       end
+
+      restore_buffer(event.buf)
     end,
   })
-  comments_api.refresh()
   refresh_terminal_title()
   vim.notify("Faltoo review mode on")
 end
@@ -471,10 +496,9 @@ function M.off()
   pcall(vim.api.nvim_del_augroup_by_name, review_augroup)
   comments_api.clear_signs()
   keymaps_api.unmap_all()
-  for buf, opts in pairs(state.saved) do
-    restore_buffer(buf, opts)
+  for buf, _ in pairs(vim.deepcopy(state.saved)) do
+    restore_buffer(buf)
   end
-  state.saved = {}
   vim.notify("Faltoo review mode off")
 end
 

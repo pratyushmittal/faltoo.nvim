@@ -5,7 +5,7 @@ repos:
       - id: stylua-github
         name: stylua fix
         args: [--indent-type, Spaces, --indent-width, "2"]
-        files: ^(lua|plugin)/.*\.lua$
+        files: ^(lua|plugin|tests)/.*\.lua$
 
   - repo: local
     hooks:
@@ -20,7 +20,15 @@ repos:
           "$lua_ls" --check=. --checklevel=Warning --logpath=.lua_ls_check --configpath=.luarc.json'
         language: system
         pass_filenames: false
-        files: ^(lua|plugin)/.*\.lua$
+        files: ^(lua|plugin|tests)/.*\.lua$
+
+      - id: faltoo-e2e
+        name: faltoo e2e
+        entry: nvim
+        args: [--headless, -u, NONE, -c, "set rtp^=.", -S, tests/e2e.lua]
+        language: system
+        pass_filenames: false
+        files: ^(lua|plugin|python|tests|README\.md|\.pre-commit-config\.yaml)
 
       - id: ruff-check
         name: ruff check fix

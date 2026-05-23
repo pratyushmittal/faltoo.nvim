@@ -30,7 +30,7 @@ With any plugin manager, add this repo to your runtime path. For a manual smoke 
 
 ## Keybindings in Review Mode
 
-When review mode is on, current and newly-entered file-backed normal buffers are marked readonly / not modifiable.
+When review mode is on, review buffers are marked readonly / not modifiable.
 
 Review commands:
 
@@ -109,8 +109,9 @@ Lua/Python formatting and diagnostics run through pre-commit. StyLua formats Lua
 brew install pre-commit lua-language-server uv
 pre-commit install
 pre-commit run --all-files
+nvim --headless -u NONE -c "set rtp^=." -S tests/e2e.lua
 ```
 
-The LuaLS hook falls back to Mason's `~/.local/share/nvim/mason/bin/lua-language-server` when it is not on `$PATH`. Ruff and ty run through `uvx`.
+The LuaLS hook falls back to Mason's `~/.local/share/nvim/mason/bin/lua-language-server` when it is not on `$PATH`. Ruff and ty run through `uvx`. The headless E2E test is also wired into pre-commit.
 
 This is intentionally minimal. The plugin stores pending comments in Lua memory and uses `python/faltoo_bridge.py` to read/write FaltooBot sessions through `faltoobot.sessions`.

@@ -72,7 +72,7 @@ local function mapped_buffers()
   return bufs
 end
 
-local function unmap_buffer(buf)
+function M.unmap_buffer(buf)
   for _, item in ipairs(state.mapped[buf] or {}) do
     pcall(vim.keymap.del, item.mode, item.lhs, { buffer = buf })
   end
@@ -103,7 +103,7 @@ end
 ---@param buf integer
 ---@param callbacks FaltooKeymapCallbacks
 function M.map_buffer(buf, callbacks)
-  unmap_buffer(buf)
+  M.unmap_buffer(buf)
   state.mapped[buf] = {}
 
   map_action(buf, "comment", function(mode)
@@ -119,7 +119,7 @@ end
 function M.unmap_all()
   for _, buf in ipairs(mapped_buffers()) do
     -- Copy keys first because unmap_buffer mutates state.mapped.
-    unmap_buffer(buf)
+    M.unmap_buffer(buf)
   end
   state.mapped = {}
 end
