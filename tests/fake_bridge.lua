@@ -4,6 +4,7 @@ function M.install(repo)
   local state = {
     messages = {},
     active_stream = nil,
+    unstaged_files = {},
   }
 
   -- Replace the Python bridge so the E2E flow stays fast and deterministic.
@@ -16,7 +17,7 @@ function M.install(repo)
         return vim.json.encode({ commands = {} })
       end
       if args[1] == "unstaged-files" then
-        return vim.json.encode({ ok = true, files = {} })
+        return vim.json.encode({ ok = true, files = state.unstaged_files })
       end
       if args[1] == "messages-path" then
         return repo .. "/messages.json"

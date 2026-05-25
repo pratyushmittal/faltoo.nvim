@@ -8,6 +8,7 @@ local fake_bridge = dofile(repo .. "/tests/fake_bridge.lua").install(repo)
 local tmp = vim.fn.tempname()
 vim.fn.mkdir(tmp, "p")
 vim.fn.writefile({ "one", "two" }, tmp .. "/sample.txt")
+fake_bridge.unstaged_files = { tmp .. "/sample.txt" }
 vim.cmd("cd " .. vim.fn.fnameescape(tmp))
 vim.cmd("edit sample.txt")
 

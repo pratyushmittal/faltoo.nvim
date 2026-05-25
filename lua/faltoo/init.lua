@@ -457,6 +457,23 @@ local function keymap_callbacks()
   }
 end
 
+local function open_unstaged_after_startup()
+  if vim.v.vim_did_enter == 1 then
+    -- When toggled later, defer once so current autocmds finish first.
+    vim.schedule(refresh_unstaged_git_buffers)
+    return
+  end
+
+  vim.api.nvim_create_autocmd("VimEnter", {
+    group = review_augroup,
+    once = true,
+    callback = function()
+      -- Open files after init.lua has registered FileType/LSP hooks.
+      vim.schedule(refresh_unstaged_git_buffers)
+    end,
+  })
+end
+
 function M.on()
   if state.enabled then
     return
@@ -486,6 +503,7 @@ function M.on()
   })
   refresh_terminal_title()
   vim.notify("Faltoo review mode on")
+  open_unstaged_after_startup()
 end
 
 function M.off()
@@ -595,7 +613,17 @@ function M.setup(opts)
   end, {
     nargs = 1,
     complete = function()
-      return { "on", "off", "tree", "ask", "comment", "file-comment", "history", "submit", "open-unstaged" }
+      return {
+        "on",
+        "off",
+        "tree",
+        "ask",
+        "comment",
+        "file-comment",
+        "history",
+        "submit",
+        "open-unstaged",
+      }
     end,
   })
 end
