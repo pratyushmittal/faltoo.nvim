@@ -107,7 +107,20 @@ fake_bridge.active_stream.on_event({ is_new = true, classes = "done", text = "As
 fake_bridge.active_stream.on_done(true)
 helpers.contains(helpers.buffer_text(history_buf), "assistant answer")
 
+-- Opening unstaged files from history should leave the modal window first.
+fake_bridge.unstaged_files = { tmp .. "/sample.txt" }
+helpers.press(history_buf, "n", "R")
+local opened_name = vim.api.nvim_buf_get_name(0)
+if vim.fn.fnamemodify(opened_name, ":t") ~= "sample.txt" then
+  error("History R did not open the unstaged file: " .. opened_name)
+end
+if vim.api.nvim_win_get_config(0).relative ~= "" then
+  error("History R opened the unstaged file inside a floating window")
+end
+
 -- With no changed files, open-unstaged should keep the user in history.
+vim.cmd("Faltoo history")
+history_buf = vim.api.nvim_get_current_buf()
 fake_bridge.unstaged_files = {}
 helpers.press(history_buf, "n", "R")
 helpers.contains(helpers.buffer_text(vim.api.nvim_get_current_buf()), "assistant answer")
