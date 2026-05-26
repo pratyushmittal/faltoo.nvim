@@ -109,7 +109,7 @@ helpers.contains(helpers.buffer_text(history_buf), "assistant answer")
 
 -- With no changed files, open-unstaged should keep the user in history.
 fake_bridge.unstaged_files = {}
-vim.cmd("Faltoo open-unstaged")
+helpers.press(history_buf, "n", "R")
 helpers.contains(helpers.buffer_text(vim.api.nvim_get_current_buf()), "assistant answer")
 
 faltoo.off()

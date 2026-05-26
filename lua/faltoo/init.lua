@@ -6,10 +6,14 @@ local state = {
   submitting = false, -- true while a bridge job runs; drives answering UI and blocks overlaps
   status = "idle", -- latest request status for statusline
   pending_question = nil, -- saved Ask AI text submitted with :Faltoo submit
+  auto_started = false, -- setup() only tries startup auto-enable once
 }
 
 -- Augroup names a set of autocmds so we can clear review-mode hooks together.
 local review_augroup = "FaltooReviewMode"
+
+-- Separate augroup for the one-shot `nvim .` auto-enable hook.
+local startup_augroup = "FaltooStartup"
 
 local function workspace()
   return vim.fn.getcwd()
@@ -535,6 +539,40 @@ function M.on()
   open_unstaged_after_startup()
 end
 
+local function auto_start_for_dot_directory()
+  if state.auto_started then
+    -- setup() may be called by plugin/faltoo.lua and then again by user config.
+    return
+  end
+  state.auto_started = true
+
+  if vim.fn.argc() ~= 1 then
+    -- Only `nvim .` should auto-enter review mode; file opens stay editable.
+    return
+  end
+
+  local target = tostring(vim.fn.argv(0) or "")
+  if target ~= "." and target ~= "./" then
+    -- `nvim some-file` should only register commands, not lock the file.
+    return
+  end
+
+  if vim.v.vim_did_enter == 1 then
+    -- Lazy-loaded setup can run after VimEnter has already fired.
+    vim.schedule(M.on)
+    return
+  end
+
+  vim.api.nvim_create_augroup(startup_augroup, { clear = true })
+  vim.api.nvim_create_autocmd("VimEnter", {
+    group = startup_augroup,
+    once = true,
+    callback = function()
+      vim.schedule(M.on)
+    end,
+  })
+end
+
 function M.off()
   if not state.enabled then
     return
@@ -605,6 +643,8 @@ function M.setup(opts)
       comment_count = comments_api.count(),
     }
   end)
+
+  auto_start_for_dot_directory()
 
   -- Let users type :faltoo while keeping the real command name :Faltoo.
   vim.cmd("silent! cunabbrev faltoo")

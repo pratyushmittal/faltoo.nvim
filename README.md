@@ -5,20 +5,32 @@ A small Neovim proof-of-concept for running FaltooBot review sessions directly i
 ## Requirements
 
 - Neovim 0.10+
+  - Neovim 0.12+ if you want to use built-in `vim.pack`
 - `faltoobot` installed, configured, and available on `$PATH`
 
 Install `faltoobot` however you prefer, such as `uv`, `pipx`, or `brew`.
 
 ## Setup
 
-With `vim.pack`, add this to your `init.lua`:
+With Neovim 0.12+ built-in `vim.pack`, add this to your `init.lua`:
 
 ```lua
 vim.pack.add({ "https://github.com/pratyushmittal/faltoo.nvim" })
 require("faltoo").setup()
 ```
 
-With any other plugin manager, install `https://github.com/pratyushmittal/faltoo.nvim` and call `require("faltoo").setup()`.
+Review mode auto-starts for `nvim .`. Opening a file directly, like `nvim some-file`, only registers commands.
+
+If you use Neovim 0.10 or 0.11, `vim.pack` is not available. Use another plugin manager and call `require("faltoo").setup()`. For example, with lazy.nvim:
+
+```lua
+{
+  "pratyushmittal/faltoo.nvim",
+  config = function()
+    require("faltoo").setup()
+  end,
+}
+```
 
 ## Commands
 

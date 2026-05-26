@@ -183,7 +183,7 @@ local function open_window()
     style = "minimal",
     border = "rounded",
     title = " Faltoo message history ",
-    footer = " p/[ previous · n/] next · r reply · q/<Esc> close ",
+    footer = " p/[ previous · n/] next · r reply · R open unstaged · q/<Esc> close ",
     width = width,
     height = height,
     row = math.floor((vim.o.lines - height) / 2),
@@ -248,6 +248,11 @@ local function open_window()
   map_move("]", 1, "Faltoo next message")
   vim.keymap.set("n", "r", "<cmd>Faltoo ask<cr>", { buffer = buf, silent = true, desc = "Faltoo reply" })
   vim.keymap.set("n", "<S-CR>", "<cmd>Faltoo submit<cr>", { buffer = buf, silent = true, desc = "Faltoo submit" })
+  vim.keymap.set("n", "R", "<cmd>Faltoo open-unstaged<cr>", {
+    buffer = buf,
+    silent = true,
+    desc = "Faltoo open unstaged files",
+  })
   vim.keymap.set("n", "q", M.close, { buffer = buf, silent = true })
   vim.keymap.set("n", "<Esc>", M.close, { buffer = buf, silent = true })
   render()
