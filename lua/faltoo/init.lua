@@ -23,6 +23,24 @@ local function inside_review_root(path)
   return normalized == root or vim.startswith(normalized, root .. "/")
 end
 
+local function git_message_buffer(buf)
+  local filetype = vim.bo[buf].filetype
+  if filetype == "gitcommit" or filetype == "gitrebase" then
+    return true
+  end
+
+  local name = vim.api.nvim_buf_get_name(buf)
+  local basename = vim.fn.fnamemodify(name, ":t")
+  local git_messages = {
+    COMMIT_EDITMSG = true,
+    MERGE_MSG = true,
+    TAG_EDITMSG = true,
+    NOTES_EDITMSG = true,
+    SQUASH_MSG = true,
+  }
+  return git_messages[basename] == true or basename == "git-rebase-todo"
+end
+
 local function normal_buffer(buf)
   if not vim.api.nvim_buf_is_valid(buf) or vim.bo[buf].buftype ~= "" then
     return false
@@ -30,6 +48,11 @@ local function normal_buffer(buf)
 
   if not vim.bo[buf].buflisted then
     -- Plugin scratch buffers are often normal buftype but intentionally unlisted.
+    return false
+  end
+
+  if git_message_buffer(buf) then
+    -- Git owns these editor buffers; they must stay writable for commit/merge text.
     return false
   end
 
@@ -425,8 +448,9 @@ local function refresh_unstaged_git_buffers()
   end
 
   if target == nil then
-    -- There may be no unstaged readable files left after closing old buffers.
+    -- With nothing to review as files, keep the user in the conversation view.
     vim.notify("No unstaged files")
+    show_history()
     return
   end
 
@@ -476,6 +500,11 @@ end
 
 function M.on()
   if state.enabled then
+    return
+  end
+  if git_message_buffer(0) then
+    -- Git invokes the editor for commit/merge text; review mode would lock it.
+    vim.notify("Faltoo review mode disabled for git message buffers")
     return
   end
   state.enabled = true

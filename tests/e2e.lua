@@ -6,14 +6,22 @@ local helpers = dofile(repo .. "/tests/helpers.lua")
 local fake_bridge = dofile(repo .. "/tests/fake_bridge.lua").install(repo)
 
 local tmp = vim.fn.tempname()
-vim.fn.mkdir(tmp, "p")
+vim.fn.mkdir(tmp .. "/.git", "p")
 vim.fn.writefile({ "one", "two" }, tmp .. "/sample.txt")
 fake_bridge.unstaged_files = { tmp .. "/sample.txt" }
 vim.cmd("cd " .. vim.fn.fnameescape(tmp))
-vim.cmd("edit sample.txt")
 
 local faltoo = require("faltoo")
 faltoo.setup()
+
+-- Git commit message buffers should not enter review mode.
+vim.cmd("edit .git/COMMIT_EDITMSG")
+faltoo.on()
+if vim.bo.readonly or not vim.bo.modifiable then
+  error("Git commit message should stay writable")
+end
+
+vim.cmd("edit sample.txt")
 faltoo.on()
 
 -- Review mode should lock normal review files.
@@ -74,7 +82,7 @@ vim.api.nvim_buf_set_lines(ask_buf, 0, -1, false, { "follow up" })
 helpers.press(ask_buf, "i", "<CR>")
 helpers.contains(faltoo.status(), "question ready")
 
-vim.cmd("Faltoo submit")
+helpers.press(history_buf, "n", "<S-CR>")
 if not fake_bridge.active_stream then
   error("Ask submit did not start a stream")
 end
@@ -98,6 +106,11 @@ table.insert(fake_bridge.messages, { role = "assistant", text = "assistant answe
 fake_bridge.active_stream.on_event({ is_new = true, classes = "done", text = "Assistant response saved." })
 fake_bridge.active_stream.on_done(true)
 helpers.contains(helpers.buffer_text(history_buf), "assistant answer")
+
+-- With no changed files, open-unstaged should keep the user in history.
+fake_bridge.unstaged_files = {}
+vim.cmd("Faltoo open-unstaged")
+helpers.contains(helpers.buffer_text(vim.api.nvim_get_current_buf()), "assistant answer")
 
 faltoo.off()
 vim.fn.delete(tmp, "rf")
