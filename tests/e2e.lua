@@ -8,6 +8,7 @@ local fake_bridge = dofile(repo .. "/tests/fake_bridge.lua").install(repo)
 local tmp = vim.fn.tempname()
 vim.fn.mkdir(tmp .. "/.git", "p")
 vim.fn.writefile({ "one", "two" }, tmp .. "/sample.txt")
+vim.fn.writefile({ "clean" }, tmp .. "/clean.txt")
 fake_bridge.unstaged_files = { tmp .. "/sample.txt" }
 vim.cmd("cd " .. vim.fn.fnameescape(tmp))
 
@@ -28,6 +29,22 @@ faltoo.on()
 local file_buf = vim.api.nvim_get_current_buf()
 if not vim.bo[file_buf].readonly or vim.bo[file_buf].modifiable then
   error("Review mode did not make the file buffer readonly")
+end
+
+-- Refreshing from a clean file should switch to unstaged files without creating a no-name buffer.
+vim.cmd("edit clean.txt")
+local clean_buf = vim.api.nvim_get_current_buf()
+helpers.press(clean_buf, "n", "R")
+if vim.fn.fnamemodify(vim.api.nvim_buf_get_name(0), ":t") ~= "sample.txt" then
+  error("Refresh did not switch back to the unstaged file")
+end
+if not helpers.has_map(vim.api.nvim_get_current_buf(), "n", "R") then
+  error("Faltoo mappings were missing after refresh")
+end
+for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+  if vim.bo[buf].buflisted and vim.api.nvim_buf_get_name(buf) == "" then
+    error("Refresh created a listed no-name buffer")
+  end
 end
 
 -- Outside files and unlisted plugin-style buffers should stay writable.

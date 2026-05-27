@@ -19,11 +19,19 @@ local function workspace()
   return vim.fn.getcwd()
 end
 
+-- Return a stable absolute path so symlinked paths compare equal.
+---@param path string
+---@return string
+local function normalize_path(path)
+  local real = (vim.uv or vim.loop).fs_realpath(path)
+  return vim.fs.normalize(real or vim.fn.fnamemodify(path, ":p"))
+end
+
 local function inside_review_root(path)
   local git_dir = vim.fs.find(".git", { path = workspace(), upward = true })[1]
   local root_path = git_dir and vim.fs.dirname(git_dir) or workspace()
-  local root = vim.fs.normalize(vim.fn.fnamemodify(root_path, ":p"))
-  local normalized = vim.fs.normalize(vim.fn.fnamemodify(path, ":p"))
+  local root = normalize_path(root_path)
+  local normalized = normalize_path(path)
   return normalized == root or vim.startswith(normalized, root .. "/")
 end
 
@@ -380,7 +388,9 @@ local function show_history()
   history_modal.open()
 end
 
-local function unstaged_file_set()
+-- Map canonical paths to the paths we should open in Neovim.
+---@return table<string, string>|nil
+local function unstaged_file_map()
   local output = bridge_api.run({ "unstaged-files", "--workspace", workspace() })
   if not output then
     return nil
@@ -402,26 +412,26 @@ local function unstaged_file_set()
     return nil
   end
 
-  local file_set = {}
+  local file_map = {}
   for _, file in ipairs(payload.files) do
-    local path = vim.fs.normalize(tostring(file))
+    local path = vim.fs.normalize(vim.fn.fnamemodify(tostring(file), ":p"))
     if vim.fn.filereadable(path) == 1 then
       -- Keep the bridge result safe even if a file changed after discovery.
-      file_set[path] = true
+      file_map[normalize_path(path)] = path
     end
   end
 
-  return file_set
+  return file_map
 end
 
-local function close_saved_buffers_not_in(file_set)
+local function close_saved_buffers_not_in(file_map)
   for _, buf in ipairs(vim.api.nvim_list_bufs()) do
     local name = vim.api.nvim_buf_get_name(buf)
-    local path = name ~= "" and vim.fs.normalize(name) or ""
+    local path = name ~= "" and normalize_path(name) or ""
     local bo = vim.bo[buf]
     local saved_normal_file = bo.buflisted and bo.buftype == "" and path ~= "" and vim.fn.filereadable(path) == 1
 
-    if saved_normal_file and not bo.modified and not file_set[path] then
+    if saved_normal_file and not bo.modified and not file_map[path] then
       -- Unsaved or synthetic plugin buffers should not be closed by a git refresh action.
       local deleted = pcall(vim.cmd, "bdelete " .. buf)
       if deleted then
@@ -433,25 +443,25 @@ local function close_saved_buffers_not_in(file_set)
 end
 
 local function refresh_unstaged_git_buffers()
-  local file_set = unstaged_file_set()
-  if file_set == nil then
-    -- unstaged_file_set() already notified the git error.
+  local file_map = unstaged_file_map()
+  if file_map == nil then
+    -- unstaged_file_map() already notified the git error.
     return
   end
 
   local count = 0
   local current_name = vim.api.nvim_buf_get_name(0)
-  local current_path = current_name ~= "" and vim.fs.normalize(current_name) or ""
-  local target = file_set[current_path] and current_path or next(file_set)
+  local current_path = current_name ~= "" and normalize_path(current_name) or ""
+  local _, first_file = next(file_map)
+  local target = file_map[current_path] and current_name or first_file
 
-  close_saved_buffers_not_in(file_set)
-
-  for file, _ in pairs(file_set) do
+  for _, file in pairs(file_map) do
     count = count + 1
     vim.cmd("badd " .. vim.fn.fnameescape(file))
   end
 
   if target == nil then
+    close_saved_buffers_not_in(file_map)
     -- With nothing to review as files, keep the user in the conversation view.
     vim.notify("No unstaged files")
     show_history()
@@ -459,6 +469,7 @@ local function refresh_unstaged_git_buffers()
   end
 
   vim.cmd("edit " .. vim.fn.fnameescape(target))
+  close_saved_buffers_not_in(file_map)
   vim.notify("Opened " .. count .. " unstaged file(s)")
 end
 
