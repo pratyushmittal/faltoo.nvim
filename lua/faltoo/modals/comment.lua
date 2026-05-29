@@ -23,11 +23,11 @@ function M.open(opts)
   end
 
   local details = opts.details or {}
-  local width = math.max(40, math.floor(vim.o.columns * 0.6))
-  local height = math.max(6, math.floor(vim.o.lines * 0.3))
-  local detail_height = math.min(#details, 10)
-  local row = math.floor((vim.o.lines - height - detail_height) / 2)
-  local col = math.floor((vim.o.columns - width) / 2)
+  local width, col = utils.right_layout(0.42, 36)
+  local height = 4
+  local detail_height = math.max(1, math.min(#details, 16))
+  local total_height = detail_height + height + 4
+  local row = math.max(0, math.floor((vim.o.lines - total_height) / 2))
 
   local detail_buf = vim.api.nvim_create_buf(false, true)
   vim.bo[detail_buf].buftype = "nofile"
@@ -55,7 +55,7 @@ function M.open(opts)
     footer = " Enter submit · Shift+Enter newline · @ file · Esc cancel ",
     width = width,
     height = height,
-    row = row + detail_height,
+    row = row + detail_height + 2,
     col = col,
   })
 

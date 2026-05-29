@@ -15,6 +15,16 @@ function M.close_window(win)
   end
 end
 
+---@param width_fraction number
+---@param min_width integer
+---@return integer width
+---@return integer col
+function M.right_layout(width_fraction, min_width)
+  local width = math.max(min_width, math.floor(vim.o.columns * width_fraction))
+  local col = math.max(0, vim.o.columns - width - 4)
+  return width, col
+end
+
 function M.insert_text_at_window(win, buf, text)
   if not vim.api.nvim_buf_is_valid(buf) or not vim.api.nvim_win_is_valid(win) then
     -- The textarea can be closed while an external picker is open.

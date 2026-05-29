@@ -78,6 +78,20 @@ file_buf = vim.api.nvim_get_current_buf()
 -- Comment modal should prepare one review comment and jump to it.
 vim.api.nvim_win_set_cursor(0, { 1, 0 })
 helpers.press(file_buf, "n", "c")
+local comment_win = vim.api.nvim_get_current_win()
+local comment_config = vim.api.nvim_win_get_config(comment_win)
+if comment_config.height ~= 4 then
+  error("Comment textarea height was not 4")
+end
+if comment_config.width > math.floor(vim.o.columns * 0.5) or comment_config.col < math.floor(vim.o.columns * 0.45) then
+  error("Comment textarea was not narrow and right-aligned")
+end
+for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+  local config = vim.api.nvim_win_get_config(win)
+  if win ~= comment_win and config.relative == "editor" and comment_config.row < config.row + config.height + 2 then
+    error("Comment textarea overlapped the review preview")
+  end
+end
 local comment_buf = vim.api.nvim_get_current_buf()
 vim.api.nvim_buf_set_lines(comment_buf, 0, -1, false, { "please fix this" })
 helpers.press(comment_buf, "i", "<CR>")
@@ -106,6 +120,13 @@ helpers.contains(helpers.buffer_text(history_buf), "review answer")
 
 -- Reply from history should save an Ask AI question.
 helpers.press(history_buf, "n", "r")
+local ask_config = vim.api.nvim_win_get_config(0)
+if ask_config.height <= 4 then
+  error("Ask textarea was not taller than 4 lines")
+end
+if ask_config.width > math.floor(vim.o.columns * 0.5) or ask_config.col < math.floor(vim.o.columns * 0.45) then
+  error("Ask textarea was not narrow and right-aligned")
+end
 local ask_buf = vim.api.nvim_get_current_buf()
 vim.api.nvim_buf_set_lines(ask_buf, 0, -1, false, { "follow up" })
 helpers.press(ask_buf, "i", "<CR>")
