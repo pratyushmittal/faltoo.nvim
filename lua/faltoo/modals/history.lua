@@ -72,9 +72,29 @@ local function append_to_current_bullet(text)
   state.stream_text = state.stream_text:sub(1, #state.stream_text - #current) .. clipped(next_text, false)
 end
 
+local function append_answer_text(text, is_new)
+  if state.stream_text ~= "" and (is_new or state.stream_classes ~= "answer") then
+    state.stream_text = state.stream_text .. "\n\n"
+  end
+
+  if is_new or state.stream_classes ~= "answer" then
+    state.stream_text = state.stream_text .. text:gsub("^%s+", "")
+  else
+    state.stream_text = state.stream_text .. text
+  end
+
+  state.stream_classes = "answer"
+end
+
 local function append_stream_text(event)
   local text = tostring(event.text or "")
   local classes = tostring(event.classes or "")
+  if classes == "answer" then
+    -- Assistant answer deltas should stay complete; tool/status bullets stay compact.
+    append_answer_text(text, event.is_new)
+    return
+  end
+
   if event.is_new or state.stream_classes ~= classes then
     if state.stream_text ~= "" then
       state.stream_text = state.stream_text .. "\n"

@@ -138,13 +138,21 @@ if not fake_bridge.active_stream then
   error("Ask submit did not start a stream")
 end
 
--- Live stream should render as bullets and keep the modal scrolled to the end.
-fake_bridge.active_stream.on_event({ is_new = true, classes = "tool", text = "read sample.txt" })
-fake_bridge.active_stream.on_event({ is_new = true, classes = "answer", text = "assistant answer" })
+-- Live stream should clip tool bullets but keep assistant answers complete.
+local long_tool = "read sample.txt " .. string.rep("tool output ", 12) .. "hidden tail"
+local answer_tail = string.rep("full response ", 12) .. "visible tail"
+local long_answer = "assistant answer " .. answer_tail
+fake_bridge.active_stream.on_event({ is_new = true, classes = "tool", text = long_tool })
+fake_bridge.active_stream.on_event({ is_new = false, classes = "answer", text = "assistant answer " })
+fake_bridge.active_stream.on_event({ is_new = false, classes = "answer", text = answer_tail })
 local streaming_text = helpers.buffer_text(history_buf)
 helpers.contains(streaming_text, "assistant · streaming")
 helpers.contains(streaming_text, "- read sample.txt")
-helpers.contains(streaming_text, "- assistant answer")
+helpers.contains(streaming_text, "...")
+if streaming_text:find("hidden tail", 1, true) then
+  error("Tool stream was not clipped: " .. streaming_text)
+end
+helpers.contains(streaming_text, long_answer)
 
 local cursor = vim.api.nvim_win_get_cursor(0)
 local line_count = vim.api.nvim_buf_line_count(history_buf)
