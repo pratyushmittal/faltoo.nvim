@@ -80,8 +80,8 @@ vim.api.nvim_win_set_cursor(0, { 1, 0 })
 helpers.press(file_buf, "n", "c")
 local comment_win = vim.api.nvim_get_current_win()
 local comment_config = vim.api.nvim_win_get_config(comment_win)
-if comment_config.height ~= 4 then
-  error("Comment textarea height was not 4")
+if comment_config.height ~= 7 then
+  error("Comment textarea height was not 7")
 end
 if comment_config.width > math.floor(vim.o.columns * 0.5) or comment_config.col < math.floor(vim.o.columns * 0.45) then
   error("Comment textarea was not narrow and right-aligned")
@@ -124,8 +124,9 @@ local ask_config = vim.api.nvim_win_get_config(0)
 if ask_config.height <= 4 then
   error("Ask textarea was not taller than 4 lines")
 end
-if ask_config.width > math.floor(vim.o.columns * 0.5) or ask_config.col < math.floor(vim.o.columns * 0.45) then
-  error("Ask textarea was not narrow and right-aligned")
+local expected_ask_col = math.floor((vim.o.columns - ask_config.width) / 2)
+if ask_config.col ~= expected_ask_col then
+  error("Ask textarea was not centered")
 end
 local ask_buf = vim.api.nvim_get_current_buf()
 vim.api.nvim_buf_set_lines(ask_buf, 0, -1, false, { "follow up" })

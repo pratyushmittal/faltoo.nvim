@@ -24,7 +24,7 @@ function M.open(opts)
 
   local details = opts.details or {}
   local width, col = utils.right_layout(0.42, 36)
-  local height = 4
+  local height = 7
   local detail_height = math.max(1, math.min(#details, 16))
   local total_height = detail_height + height + 4
   local row = math.max(0, math.floor((vim.o.lines - total_height) / 2))

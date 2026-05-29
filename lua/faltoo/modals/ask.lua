@@ -20,9 +20,10 @@ function M.open(opts)
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, initial_lines)
   end
 
-  local width, col = utils.right_layout(0.42, 36)
+  local width = math.max(50, math.floor(vim.o.columns * 0.7))
   local height = math.max(6, math.min(10, math.floor(vim.o.lines * 0.35)))
   local row = math.floor((vim.o.lines - height) / 2)
+  local col = math.floor((vim.o.columns - width) / 2)
   local win = vim.api.nvim_open_win(buf, true, {
     relative = "editor",
     style = "minimal",
