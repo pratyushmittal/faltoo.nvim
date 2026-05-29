@@ -66,6 +66,8 @@ require("faltoo").setup({
     ask = "<leader>a", -- ask AI directly
     submit = "<S-CR>", -- submit saved question or pending comments
     open_unstaged = "R", -- open unstaged git files
+    next_comment = "]c", -- jump to next pending comment
+    prev_comment = "[c", -- jump to previous pending comment
     -- ask = false, -- disable one mapping
   },
 })

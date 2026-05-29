@@ -493,6 +493,12 @@ local function keymap_callbacks()
     ask = ask_question,
     submit = submit_pending_request,
     open_unstaged = refresh_unstaged_git_buffers,
+    next_comment = function()
+      comments_api.jump(1)
+    end,
+    prev_comment = function()
+      comments_api.jump(-1)
+    end,
   }
 end
 

@@ -75,12 +75,24 @@ end
 vim.cmd("edit sample.txt")
 file_buf = vim.api.nvim_get_current_buf()
 
--- Comment modal should prepare and submit one review comment.
+-- Comment modal should prepare one review comment and jump to it.
+vim.api.nvim_win_set_cursor(0, { 1, 0 })
 helpers.press(file_buf, "n", "c")
 local comment_buf = vim.api.nvim_get_current_buf()
 vim.api.nvim_buf_set_lines(comment_buf, 0, -1, false, { "please fix this" })
 helpers.press(comment_buf, "i", "<CR>")
 helpers.contains(faltoo.status(), "1 comment(s)")
+
+vim.api.nvim_win_set_cursor(0, { 2, 0 })
+helpers.press(file_buf, "n", "]c")
+if vim.fn.line(".") ~= 1 then
+  error("Next comment did not jump to the pending comment")
+end
+vim.api.nvim_win_set_cursor(0, { 2, 0 })
+helpers.press(file_buf, "n", "[c")
+if vim.fn.line(".") ~= 1 then
+  error("Previous comment did not jump to the pending comment")
+end
 
 vim.cmd("Faltoo submit")
 if faltoo.status():find("comment", 1, true) then

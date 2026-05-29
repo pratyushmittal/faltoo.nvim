@@ -147,6 +147,57 @@ function M.count()
   return #comments
 end
 
+-- Return pending line-comment starts for the current buffer.
+---@return integer[]
+local function current_buffer_comment_lines()
+  local path = current_path()
+  local lines = {}
+
+  for _, comment in ipairs(comments) do
+    local line = tonumber(comment.line_number_start or 0) or 0
+    if line > 0 and same_comment_file(comment, path) then
+      table.insert(lines, line)
+    end
+  end
+
+  table.sort(lines)
+  return lines
+end
+
+---@param direction 1|-1
+function M.jump(direction)
+  local lines = current_buffer_comment_lines()
+  if #lines == 0 then
+    -- The current buffer may have no pending line comments yet.
+    vim.notify("No Faltoo comments in this buffer")
+    return
+  end
+
+  local current = vim.fn.line(".")
+  local target = lines[1]
+  if direction < 0 then
+    target = lines[#lines]
+  end
+
+  for _, line in ipairs(lines) do
+    if direction > 0 and line > current then
+      target = line
+      break
+    end
+    if direction < 0 and line < current then
+      target = line
+    end
+  end
+
+  local line_count = vim.api.nvim_buf_line_count(0)
+  if target > line_count then
+    -- Pending comments can outlive file edits that shorten the buffer.
+    target = line_count
+  end
+
+  vim.api.nvim_win_set_cursor(0, { target, 0 })
+end
+
 function M.clear()
   comments = {}
   M.refresh()

@@ -7,6 +7,8 @@ local default_mappings = {
   ask = { modes = "n", lhs = "<leader>a" },
   submit = { modes = "n", lhs = "<S-CR>" },
   open_unstaged = { modes = "n", lhs = "R" },
+  next_comment = { modes = "n", lhs = "]c" },
+  prev_comment = { modes = "n", lhs = "[c" },
 }
 
 ---@class FaltooMapping
@@ -23,6 +25,8 @@ local default_mappings = {
 ---@field ask fun()
 ---@field submit fun()
 ---@field open_unstaged fun()
+---@field next_comment fun()
+---@field prev_comment fun()
 
 local state = {
   mappings = vim.deepcopy(default_mappings),
@@ -114,6 +118,8 @@ function M.map_buffer(buf, callbacks)
   map_action(buf, "ask", callbacks.ask, "Ask Faltoo")
   map_action(buf, "submit", callbacks.submit, "Faltoo submit")
   map_action(buf, "open_unstaged", callbacks.open_unstaged, "Faltoo open unstaged files")
+  map_action(buf, "next_comment", callbacks.next_comment, "Faltoo next comment")
+  map_action(buf, "prev_comment", callbacks.prev_comment, "Faltoo previous comment")
 end
 
 function M.unmap_all()
