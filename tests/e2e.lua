@@ -24,6 +24,9 @@ end
 
 vim.cmd("edit sample.txt")
 faltoo.on()
+if fake_bridge.prewarm_count == 0 then
+  error("Review mode did not start bridge prewarm")
+end
 
 -- Review mode should lock normal review files.
 local file_buf = vim.api.nvim_get_current_buf()
@@ -132,6 +135,9 @@ local ask_buf = vim.api.nvim_get_current_buf()
 vim.api.nvim_buf_set_lines(ask_buf, 0, -1, false, { "follow up" })
 helpers.press(ask_buf, "i", "<CR>")
 helpers.contains(faltoo.status(), "question ready")
+if vim.api.nvim_get_current_buf() ~= history_buf then
+  error("Ask reply did not return focus to history")
+end
 
 helpers.press(history_buf, "n", "<S-CR>")
 if not fake_bridge.active_stream then
@@ -153,6 +159,18 @@ if streaming_text:find("hidden tail", 1, true) then
   error("Tool stream was not clipped: " .. streaming_text)
 end
 helpers.contains(streaming_text, long_answer)
+
+-- Empty new events should keep concise reasoning headings as separate bullets.
+fake_bridge.active_stream.on_event({ is_new = true, classes = "", text = "" })
+fake_bridge.active_stream.on_event({ is_new = false, classes = "thinking", text = "**First heading**" })
+fake_bridge.active_stream.on_event({ is_new = true, classes = "", text = "" })
+fake_bridge.active_stream.on_event({ is_new = false, classes = "thinking", text = "**Second heading**" })
+streaming_text = helpers.buffer_text(history_buf)
+helpers.contains(streaming_text, "- **First heading**")
+helpers.contains(streaming_text, "- **Second heading**")
+if streaming_text:find("%- %*%*First heading%*%*%*%*Second heading%*%*") then
+  error("Reasoning headings were clubbed into one bullet: " .. streaming_text)
+end
 
 local cursor = vim.api.nvim_win_get_cursor(0)
 local line_count = vim.api.nvim_buf_line_count(history_buf)

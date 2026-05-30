@@ -4,27 +4,42 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-from pathlib import Path
 import sys
+from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
-from faltoobot.faltoochat.git import get_unstaged_files, is_git_workspace  # ty: ignore[unresolved-import]
-from faltoobot.faltoochat.review_api import Review, reviews_prompt  # ty: ignore[unresolved-import]
-from faltoobot.faltoochat.slash_commands import SlashCommandStore  # ty: ignore[unresolved-import]
-from faltoobot.faltoochat.stream import get_event_text  # ty: ignore[unresolved-import]
-from faltoobot.sessions import (  # ty: ignore[unresolved-import]
+from faltoobot.faltoochat.git import get_unstaged_files, is_git_workspace
+from faltoobot.faltoochat.logging_config import configure_logging  # ty: ignore[unresolved-import]
+from faltoobot.faltoochat.review_api import Review, reviews_prompt
+from faltoobot.faltoochat.slash_commands import SlashCommandStore
+from faltoobot.faltoochat.stream import get_event_text
+from faltoobot.sessions import (
     Session,
     append_user_turn,
     get_answer_streaming,
     get_dir_chat_key,
     get_messages,
     get_session,
+    prewarm_openai_websocket,  # ty: ignore[unresolved-import]
 )
+
+# Logging can change when the workspace/session changes, so remember the last one.
+_configured_logging: tuple[Path, str] | None = None
 
 
 def _session(workspace: Path) -> Session:
+    global _configured_logging
+
     workspace = workspace.expanduser().resolve()
-    return get_session(get_dir_chat_key(workspace), workspace=workspace)
+    session = get_session(get_dir_chat_key(workspace), workspace=workspace)
+    log_path = session.chat_root.parent.parent / "faltoochat.log"
+    key = (log_path, session.session_id)
+    if _configured_logging != key:
+        # _session() is called often; only reconfigure when the active session changes.
+        configure_logging(log_path, session_id=session.session_id)
+        _configured_logging = key
+    return session
 
 
 def _message_text(item: dict[str, Any]) -> str:
@@ -40,18 +55,15 @@ def _message_text(item: dict[str, Any]) -> str:
     return ""
 
 
-def _stdin_payload() -> dict[str, Any]:
-    payload = json.loads(sys.stdin.read() or "{}")
-    if isinstance(payload, dict):
-        return payload
-    return {}
-
-
 def _payload_comments(payload: dict[str, Any]) -> list[dict[str, Any]]:
     comments = payload.get("comments")
     if not isinstance(comments, list):
         return []
     return [item for item in comments if isinstance(item, dict)]
+
+
+def _print_json(payload: dict[str, Any]) -> None:
+    print(json.dumps(payload, ensure_ascii=False), flush=True)
 
 
 def messages_path(workspace: Path) -> int:
@@ -63,12 +75,7 @@ def messages_path(workspace: Path) -> int:
 def unstaged_files(workspace: Path) -> int:
     workspace = workspace.expanduser().resolve()
     if not is_git_workspace(workspace):
-        print(
-            json.dumps(
-                {"ok": False, "error": "Not inside a git repository"},
-                ensure_ascii=False,
-            )
-        )
+        _print_json({"ok": False, "error": "Not inside a git repository"})
         return 0
 
     files = []
@@ -78,7 +85,7 @@ def unstaged_files(workspace: Path) -> int:
             # Deleted files can appear in git diff but cannot be opened as buffers.
             files.append(str(full_path.resolve()))
 
-    print(json.dumps({"ok": True, "files": files}, ensure_ascii=False))
+    _print_json({"ok": True, "files": files})
     return 0
 
 
@@ -96,7 +103,7 @@ def messages(workspace: Path, limit: int) -> int:
             continue
         messages_payload.append({"role": role, "text": text})
 
-    print(json.dumps({"messages": messages_payload}, ensure_ascii=False))
+    _print_json({"messages": messages_payload})
     return 0
 
 
@@ -136,7 +143,7 @@ def slash_commands() -> int:
         }
         for command, prompt in sorted(commands.items())
     ]
-    print(json.dumps({"commands": payload}, ensure_ascii=False))
+    _print_json({"commands": payload})
     return 0
 
 
@@ -152,56 +159,130 @@ def _expand_slash_command(text: str) -> str:
     return prompt.template
 
 
-def _emit(is_new: bool, classes: str, text: str) -> None:
-    print(
-        json.dumps(
-            {"is_new": is_new, "classes": classes, "text": text},
-            ensure_ascii=False,
-        ),
-        flush=True,
-    )
+# Streaming code emits small updates; the server maps them to JSON lines for Neovim.
+Emit = Callable[[bool, str, str], None]
 
 
-async def _stream_answer(session: Session) -> None:
+async def _stream_answer(session: Session, emit: Emit) -> None:
     async for event in get_answer_streaming(session):
         is_new, classes, text = get_event_text(event)
-        # Some stream events only update state and have no visible text.
-        if not text.strip():
+        # Empty new events separate adjacent streaming blocks in the UI.
+        if not text.strip() and not is_new:
             continue
-        _emit(is_new, classes, text)
+        emit(is_new, classes, text)
 
-    _emit(True, "done", "Assistant response saved.")
+    emit(True, "done", "Assistant response saved.")
 
 
-async def append_review(workspace: Path, items: list[dict[str, Any]]) -> int:
+async def prewarm(workspace: Path) -> int:
+    await prewarm_openai_websocket(_session(workspace))
+    return 0
+
+
+async def append_review(
+    workspace: Path, items: list[dict[str, Any]], emit: Emit
+) -> int:
     comments = _normalize_comments(items)
     # The UI can submit with a stale empty queue after comments were cleared.
     if not comments:
-        _emit(True, "done", "No review comments to submit.")
+        emit(True, "done", "No review comments to submit.")
         return 0
 
     session = _session(workspace)
     await append_user_turn(session, question=reviews_prompt(comments))
-    _emit(
+    emit(
         True,
         "status",
         f"Submitted {len(comments)} review comment(s). Waiting for assistant...",
     )
-    await _stream_answer(session)
+    await _stream_answer(session, emit)
     return 0
 
 
-async def append_message(workspace: Path, text: str) -> int:
+async def append_message(workspace: Path, text: str, emit: Emit) -> int:
     text = _expand_slash_command(text.strip())
     # FaltooBot requires a non-empty user turn.
     if not text:
-        _emit(True, "done", "No message to submit.")
+        emit(True, "done", "No message to submit.")
         return 0
 
     session = _session(workspace)
     await append_user_turn(session, question=text)
-    _emit(True, "status", "Submitted message. Waiting for assistant...")
-    await _stream_answer(session)
+    emit(True, "status", "Submitted message. Waiting for assistant...")
+    await _stream_answer(session, emit)
+    return 0
+
+
+async def _run_server_command(
+    command: str, payload: dict[str, Any], emit: Emit
+) -> None:
+    workspace = Path(str(payload.get("workspace") or Path.cwd()))
+    if command == "prewarm":
+        await prewarm(workspace)
+    elif command == "append-review":
+        await append_review(workspace, _payload_comments(payload), emit)
+    elif command == "append-message":
+        await append_message(workspace, str(payload.get("text") or ""), emit)
+    else:
+        raise ValueError(f"Unsupported server command: {command}")
+
+
+async def _handle_server_request(request: dict[str, Any]) -> None:
+    """Run one JSON request from the persistent Neovim bridge server."""
+    request_id = request.get("id")
+    args = request.get("args")
+    if not isinstance(args, list) or not args:
+        _print_json(
+            {"id": request_id, "done": True, "ok": False, "error": "Missing command"}
+        )
+        return
+
+    def emit(is_new: bool, classes: str, text: str) -> None:
+        _print_json(
+            {
+                "id": request_id,
+                "event": {"is_new": is_new, "classes": classes, "text": text},
+            }
+        )
+
+    try:
+        payload = json.loads(str(request.get("input") or "{}"))
+        if not isinstance(payload, dict):
+            # Invalid JSON input should fail as an empty command payload.
+            payload = {}
+        await _run_server_command(str(args[0]), payload, emit)
+    except Exception as exc:
+        _print_json({"id": request_id, "done": True, "ok": False, "error": str(exc)})
+        return
+
+    _print_json({"id": request_id, "done": True, "ok": True})
+
+
+async def server() -> int:
+    """Run the persistent Neovim bridge server.
+
+    Reads one JSON object per stdin line:
+    {"id": "1", "args": ["append-message"], "input": "{...}"}.
+    Writes JSON lines back with the same id, either streaming `event` payloads
+    or a final `{done: true, ok: bool}` response. Requests run one at a time
+    so websocket prewarm cannot race with a later submit.
+    """
+    loop = asyncio.get_running_loop()
+    while line := await loop.run_in_executor(None, sys.stdin.readline):
+        try:
+            request = json.loads(line)
+        except json.JSONDecodeError as exc:
+            _print_json({"id": None, "done": True, "ok": False, "error": str(exc)})
+            continue
+        if not isinstance(request, dict):
+            _print_json(
+                {"id": None, "done": True, "ok": False, "error": "Invalid request"}
+            )
+            continue
+
+        # Keep requests ordered so prewarm cannot race with a later submit.
+        await _handle_server_request(request)
+
     return 0
 
 
@@ -219,9 +300,8 @@ def main() -> int:
     unstaged_parser = sub.add_parser("unstaged-files")
     unstaged_parser.add_argument("--workspace", default=str(Path.cwd()))
 
-    sub.add_parser("append-review")
-    sub.add_parser("append-message")
     sub.add_parser("slash-commands")
+    sub.add_parser("server")
 
     args = parser.parse_args()
     if args.command == "messages":
@@ -230,16 +310,10 @@ def main() -> int:
         return messages_path(Path(args.workspace))
     if args.command == "unstaged-files":
         return unstaged_files(Path(args.workspace))
-    if args.command == "append-review":
-        payload = _stdin_payload()
-        workspace = Path(str(payload.get("workspace") or Path.cwd()))
-        return asyncio.run(append_review(workspace, _payload_comments(payload)))
-    if args.command == "append-message":
-        payload = _stdin_payload()
-        workspace = Path(str(payload.get("workspace") or Path.cwd()))
-        return asyncio.run(append_message(workspace, str(payload.get("text") or "")))
     if args.command == "slash-commands":
         return slash_commands()
+    if args.command == "server":
+        return asyncio.run(server())
     return 1
 
 

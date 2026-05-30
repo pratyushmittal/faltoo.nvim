@@ -7,6 +7,7 @@ local M = {}
 ---@field repo_files fun(): string[]
 ---@field slash_commands fun(): table[]
 ---@field on_save fun(text: string)
+---@field return_win? integer
 
 ---@param opts FaltooAskModalOpts
 function M.open(opts)
@@ -39,6 +40,10 @@ function M.open(opts)
   local function cancel()
     utils.leave_insert_mode()
     utils.close_window(win)
+    if opts.return_win and vim.api.nvim_win_is_valid(opts.return_win) then
+      -- Closing stacked modals can otherwise focus the file buffer behind history.
+      pcall(vim.api.nvim_set_current_win, opts.return_win)
+    end
   end
 
   local function save()

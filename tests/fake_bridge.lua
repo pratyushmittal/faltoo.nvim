@@ -5,6 +5,7 @@ function M.install(repo)
     messages = {},
     active_stream = nil,
     unstaged_files = {},
+    prewarm_count = 0,
   }
 
   -- Replace the Python bridge so the E2E flow stays fast and deterministic.
@@ -23,6 +24,10 @@ function M.install(repo)
         return repo .. "/messages.json"
       end
       return ""
+    end,
+
+    prewarm = function()
+      state.prewarm_count = state.prewarm_count + 1
     end,
 
     stream = function(args, input, on_event, on_done)

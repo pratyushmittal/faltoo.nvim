@@ -89,6 +89,13 @@ end
 local function append_stream_text(event)
   local text = tostring(event.text or "")
   local classes = tostring(event.classes or "")
+  if vim.trim(text) == "" then
+    if event.is_new then
+      -- Empty done events separate adjacent reasoning/tool blocks.
+      state.stream_classes = nil
+    end
+    return
+  end
   if classes == "answer" then
     -- Assistant answer deltas should stay complete; tool/status bullets stay compact.
     append_answer_text(text, event.is_new)

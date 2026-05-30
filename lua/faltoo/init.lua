@@ -376,7 +376,10 @@ local function slash_commands()
 end
 
 local function ask_question()
+  local return_win = vim.api.nvim_get_current_win()
+  bridge_api.prewarm(workspace())
   modals.ask({
+    return_win = return_win,
     initial_text = state.pending_question or "",
     repo_files = git_api.repo_files,
     slash_commands = slash_commands,
@@ -552,6 +555,7 @@ function M.on()
     end,
   })
   refresh_terminal_title()
+  bridge_api.prewarm(workspace())
   vim.notify("Faltoo review mode on")
   open_unstaged_after_startup()
 end
