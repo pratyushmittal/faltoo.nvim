@@ -139,6 +139,32 @@ local function update_view()
   end
 end
 
+---@param win integer
+---@param history_buf integer
+---@param return_win integer
+---@return boolean|nil
+local function redirect_picker_file_from_history(win, history_buf, return_win)
+  if not state.view or state.view.win ~= win then
+    -- Stop this autocmd after the history modal is closed.
+    return true
+  end
+  if vim.api.nvim_get_current_win() ~= win or vim.api.nvim_get_current_buf() == history_buf then
+    -- Normal history rendering keeps the original history buffer in this window.
+    return nil
+  end
+
+  -- External pickers open files in the currently focused window. If history
+  -- has focus, move that file out of the modal and close the modal.
+  local opened_buf = vim.api.nvim_get_current_buf()
+  M.close()
+  if vim.api.nvim_win_is_valid(return_win) then
+    -- The original window may be gone if the user changed layout while picking.
+    pcall(vim.api.nvim_set_current_win, return_win)
+    pcall(vim.api.nvim_set_current_buf, opened_buf)
+  end
+  return true
+end
+
 function M.is_open()
   return state.view ~= nil
 end
@@ -256,6 +282,8 @@ end
 
 local function open_window()
   local messages = messages_with_stream()
+  -- Used if Telescope/other pickers open a file while history has focus.
+  local return_win = vim.api.nvim_get_current_win()
   local buf = vim.api.nvim_create_buf(false, true)
   vim.bo[buf].buftype = "nofile"
   vim.bo[buf].bufhidden = "wipe"
@@ -279,6 +307,11 @@ local function open_window()
     once = true,
     callback = function()
       clear_view(win)
+    end,
+  })
+  vim.api.nvim_create_autocmd("BufEnter", {
+    callback = function()
+      return redirect_picker_file_from_history(win, buf, return_win)
     end,
   })
 
