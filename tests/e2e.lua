@@ -121,8 +121,20 @@ vim.cmd("Faltoo history")
 local history_buf = vim.api.nvim_get_current_buf()
 helpers.contains(helpers.buffer_text(history_buf), "review answer")
 
--- Reply from history should save an Ask AI question.
+-- Normal reply should ignore stale visual selection marks.
+vim.fn.setpos("'<", { 0, 3, 1, 0 })
+vim.fn.setpos("'>", { 0, 3, #"review answer", 0 })
 helpers.press(history_buf, "n", "r")
+local ask_buf = vim.api.nvim_get_current_buf()
+if helpers.buffer_text(ask_buf):find("review answer", 1, true) then
+  error("Normal reply reused stale history selection")
+end
+helpers.press(ask_buf, "n", "q")
+
+-- Visual reply should seed selected text into Ask AI.
+vim.fn.setpos("'<", { 0, 3, 1, 0 })
+vim.fn.setpos("'>", { 0, 3, #"review answer", 0 })
+helpers.press(history_buf, "x", "r")
 local ask_config = vim.api.nvim_win_get_config(0)
 if ask_config.height <= 4 then
   error("Ask textarea was not taller than 4 lines")
@@ -131,7 +143,9 @@ local expected_ask_col = math.floor((vim.o.columns - ask_config.width) / 2)
 if ask_config.col ~= expected_ask_col then
   error("Ask textarea was not centered")
 end
-local ask_buf = vim.api.nvim_get_current_buf()
+ask_buf = vim.api.nvim_get_current_buf()
+helpers.contains(helpers.buffer_text(ask_buf), '"""')
+helpers.contains(helpers.buffer_text(ask_buf), "review answer")
 vim.api.nvim_buf_set_lines(ask_buf, 0, -1, false, { "follow up" })
 helpers.press(ask_buf, "i", "<CR>")
 helpers.contains(faltoo.status(), "question ready")

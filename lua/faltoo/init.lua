@@ -377,10 +377,11 @@ end
 
 local function ask_question()
   local return_win = vim.api.nvim_get_current_win()
+  local initial_text = state.pending_question or history_modal.selected_reply_text() or ""
   bridge_api.prewarm(workspace())
   modals.ask({
     return_win = return_win,
-    initial_text = state.pending_question or "",
+    initial_text = initial_text,
     repo_files = git_api.repo_files,
     slash_commands = slash_commands,
     on_save = save_question,

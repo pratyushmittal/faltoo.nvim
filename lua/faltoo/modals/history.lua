@@ -196,6 +196,64 @@ function M.update_stream(event)
   update_view()
 end
 
+-- Return the current visual selection from the rendered history buffer.
+---@param buf integer
+---@return string
+local function selected_text(buf)
+  local start_pos = vim.fn.getpos("'<")
+  local end_pos = vim.fn.getpos("'>")
+  local start_buf = tonumber(start_pos[1] or 0) or 0
+  local end_buf = tonumber(end_pos[1] or 0) or 0
+  local start_line = tonumber(start_pos[2] or 0) or 0
+  local end_line = tonumber(end_pos[2] or 0) or 0
+  local start_col = tonumber(start_pos[3] or 1) or 1
+  local end_col = tonumber(end_pos[3] or 1) or 1
+
+  if start_line == 0 or end_line == 0 then
+    -- Normal-mode reply has no active visual selection to pass forward.
+    return ""
+  end
+
+  if (start_buf ~= 0 and start_buf ~= buf) or (end_buf ~= 0 and end_buf ~= buf) then
+    -- Stale visual marks can belong to a buffer that is not the history modal.
+    return ""
+  end
+
+  if start_line > end_line or (start_line == end_line and start_col > end_col) then
+    start_line, end_line = end_line, start_line
+    start_col, end_col = end_col, start_col
+  end
+
+  local buffer_lines = vim.api.nvim_buf_get_lines(buf, start_line - 1, end_line, false)
+  if buffer_lines[1] == nil then
+    -- Visual marks can point past the rendered history after updates.
+    return ""
+  end
+
+  local first_line = buffer_lines[1] or ""
+  local last_line = buffer_lines[#buffer_lines] or ""
+  start_col = math.min(math.max(start_col - 1, 0), #first_line)
+  end_col = math.min(math.max(end_col, 0), #last_line)
+
+  local ok, lines = pcall(vim.api.nvim_buf_get_text, buf, start_line - 1, start_col, end_line - 1, end_col, {})
+  if not ok then
+    -- Visual marks can point outside the history buffer after rerendering.
+    return ""
+  end
+
+  return vim.trim(table.concat(lines, "\n"))
+end
+
+---@param buf integer
+---@return string|nil
+local function quoted_selection(buf)
+  local text = selected_text(buf)
+  if text == "" then
+    return nil
+  end
+  return '"""\n' .. text .. '\n"""'
+end
+
 local function open_window()
   local messages = messages_with_stream()
   local buf = vim.api.nvim_create_buf(false, true)
@@ -273,7 +331,13 @@ local function open_window()
   map_move("[", -1, "Faltoo previous message")
   map_move("n", 1, "Faltoo next message")
   map_move("]", 1, "Faltoo next message")
-  vim.keymap.set("n", "r", "<cmd>Faltoo ask<cr>", { buffer = buf, silent = true, desc = "Faltoo reply" })
+  vim.keymap.set("n", "r", function()
+    -- Normal reply should not reuse old visual selection marks.
+    vim.fn.setpos("'<", { 0, 0, 0, 0 })
+    vim.fn.setpos("'>", { 0, 0, 0, 0 })
+    vim.cmd("Faltoo ask")
+  end, { buffer = buf, silent = true, desc = "Faltoo reply" })
+  vim.keymap.set("x", "r", "<cmd>Faltoo ask<cr>", { buffer = buf, silent = true, desc = "Faltoo reply with selection" })
   vim.keymap.set("n", "<S-CR>", "<cmd>Faltoo submit<cr>", { buffer = buf, silent = true, desc = "Faltoo submit" })
   vim.keymap.set("n", "R", function()
     M.close()
@@ -286,7 +350,17 @@ local function open_window()
   vim.keymap.set("n", "q", M.close, { buffer = buf, silent = true })
   vim.keymap.set("n", "<Esc>", M.close, { buffer = buf, silent = true })
   render()
-  return { win = win, update = update }
+  return { win = win, buf = buf, update = update }
+end
+
+---@return string|nil
+function M.selected_reply_text()
+  local view = state.view
+  if not view or vim.api.nvim_get_current_win() ~= view.win then
+    -- Only a selection from the focused history modal should seed Ask Faltoo.
+    return nil
+  end
+  return quoted_selection(view.buf)
 end
 
 function M.open()
