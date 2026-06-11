@@ -532,7 +532,12 @@ function M.on()
     vim.notify("Faltoo review mode disabled for git message buffers")
     return
   end
+
+  -- Enable first so callbacks know review mode is active.
   state.enabled = true
+  keymaps_api.map_global(keymap_callbacks())
+
+  -- Lock currently open review buffers.
   for _, buf in ipairs(vim.api.nvim_list_bufs()) do
     if normal_buffer(buf) then
       make_readonly(buf)
@@ -540,6 +545,8 @@ function M.on()
       comments_api.refresh()
     end
   end
+
+  -- Keep future buffers synced with review mode.
   vim.api.nvim_create_augroup(review_augroup, { clear = true })
   -- FileType catches plugins that change buffer ownership after opening.
   vim.api.nvim_create_autocmd({ "BufEnter", "BufWinEnter", "FileType" }, {
@@ -555,6 +562,8 @@ function M.on()
       restore_buffer(event.buf)
     end,
   })
+
+  -- Start the bridge and open review files after mode setup is complete.
   refresh_terminal_title()
   bridge_api.prewarm(workspace())
   vim.notify("Faltoo review mode on")
@@ -602,6 +611,7 @@ function M.off()
   state.enabled = false
   pcall(vim.api.nvim_del_augroup_by_name, review_augroup)
   comments_api.clear_signs()
+  keymaps_api.unmap_global()
   keymaps_api.unmap_all()
   for buf, _ in pairs(vim.deepcopy(state.saved)) do
     restore_buffer(buf)

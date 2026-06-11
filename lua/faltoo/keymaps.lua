@@ -31,6 +31,7 @@ local default_mappings = {
 local state = {
   mappings = vim.deepcopy(default_mappings),
   mapped = {},
+  global_mapped = {},
 }
 
 local function mapping_modes(mapping)
@@ -83,6 +84,13 @@ function M.unmap_buffer(buf)
   state.mapped[buf] = nil
 end
 
+function M.unmap_global()
+  for _, item in ipairs(state.global_mapped) do
+    pcall(vim.keymap.del, item.mode, item.lhs)
+  end
+  state.global_mapped = {}
+end
+
 local function map_action(buf, name, callback, desc)
   local mapping = state.mappings[name]
   if mapping == false or mapping == nil or mapping.lhs == nil then
@@ -102,6 +110,33 @@ end
 ---@param opts? FaltooSetupOpts
 function M.setup(opts)
   state.mappings = configured_mappings(opts)
+end
+
+---@param callbacks FaltooKeymapCallbacks
+function M.map_global(callbacks)
+  M.unmap_global()
+
+  local actions = {
+    history = { callback = callbacks.history, desc = "Faltoo open history" },
+    ask = { callback = callbacks.ask, desc = "Ask Faltoo" },
+  }
+
+  for name, action in pairs(actions) do
+    local mapping = state.mappings[name]
+    if mapping ~= false and mapping ~= nil and mapping.lhs ~= nil then
+      for _, mode in ipairs(mapping_modes(mapping)) do
+        local ok = pcall(vim.keymap.set, mode, mapping.lhs, action.callback, {
+          silent = true,
+          desc = action.desc,
+          unique = true,
+        })
+        if ok then
+          -- Only delete global Faltoo maps we successfully created.
+          table.insert(state.global_mapped, { mode = mode, lhs = mapping.lhs })
+        end
+      end
+    end
+  end
 end
 
 ---@param buf integer

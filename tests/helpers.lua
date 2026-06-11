@@ -1,5 +1,10 @@
 local M = {}
 
+local function normalized_lhs(lhs)
+  local leader = vim.g.mapleader or "\\"
+  return lhs:gsub("<leader>", leader):gsub("<Leader>", leader)
+end
+
 function M.contains(text, expected)
   if not text:find(expected, 1, true) then
     error("Expected to find `" .. expected .. "` in:\n" .. text)
@@ -13,6 +18,16 @@ end
 function M.has_map(buf, mode, lhs)
   for _, item in ipairs(vim.api.nvim_buf_get_keymap(buf, mode)) do
     if item.lhs == lhs then
+      return true
+    end
+  end
+  return false
+end
+
+function M.has_global_map(mode, lhs)
+  local normalized = normalized_lhs(lhs)
+  for _, item in ipairs(vim.api.nvim_get_keymap(mode)) do
+    if item.lhs == lhs or item.lhs == normalized then
       return true
     end
   end

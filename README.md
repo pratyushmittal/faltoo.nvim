@@ -55,7 +55,7 @@ Review commands:
 - `:Faltoo ask` opens a textarea modal to ask AI.
 - `:Faltoo open-unstaged` opens current unstaged git files as buffers and closes saved normal buffers outside that set.
 
-Review mode installs these buffer-local keybindings on readonly review buffers. These are the defaults:
+Default review-mode keybindings:
 
 ```lua
 require("faltoo").setup({

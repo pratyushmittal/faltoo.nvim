@@ -24,6 +24,9 @@ end
 
 vim.cmd("edit sample.txt")
 faltoo.on()
+if not helpers.has_global_map("n", "<leader>f") or not helpers.has_global_map("n", "<leader>a") then
+  error("Faltoo global history/ask mappings were missing")
+end
 if fake_bridge.prewarm_count == 0 then
   error("Review mode did not start bridge prewarm")
 end

@@ -25,7 +25,7 @@ repos:
       - id: faltoo-e2e
         name: faltoo e2e
         entry: nvim
-        args: [--headless, -u, NONE, -c, "set rtp^=.", -S, tests/e2e.lua]
+        args: [--headless, -u, NONE, -c, "set rtp^=.", -S, tests/e2e.lua, -c, cquit]
         language: system
         pass_filenames: false
         files: ^(lua|plugin|python|tests|README\.md|\.pre-commit-config\.yaml)
