@@ -370,7 +370,11 @@ local function open_window()
     vim.fn.setpos("'>", { 0, 0, 0, 0 })
     vim.cmd("Faltoo ask")
   end, { buffer = buf, silent = true, desc = "Faltoo reply" })
-  vim.keymap.set("x", "r", "<cmd>Faltoo ask<cr>", { buffer = buf, silent = true, desc = "Faltoo reply with selection" })
+  vim.keymap.set("x", "r", "<Esc><cmd>Faltoo ask<cr>", {
+    buffer = buf,
+    silent = true,
+    desc = "Faltoo reply with selection",
+  })
   vim.keymap.set("n", "<S-CR>", "<cmd>Faltoo submit<cr>", { buffer = buf, silent = true, desc = "Faltoo submit" })
   vim.keymap.set("n", "R", function()
     M.close()

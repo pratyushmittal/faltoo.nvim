@@ -135,9 +135,9 @@ end
 helpers.press(ask_buf, "n", "q")
 
 -- Visual reply should seed selected text into Ask AI.
-vim.fn.setpos("'<", { 0, 3, 1, 0 })
-vim.fn.setpos("'>", { 0, 3, #"review answer", 0 })
-helpers.press(history_buf, "x", "r")
+vim.api.nvim_win_set_cursor(0, { 3, 0 })
+local visual_reply = vim.api.nvim_replace_termcodes("v$r", true, false, true)
+vim.api.nvim_feedkeys(visual_reply, "xt", false)
 local ask_config = vim.api.nvim_win_get_config(0)
 if ask_config.height <= 4 then
   error("Ask textarea was not taller than 4 lines")
