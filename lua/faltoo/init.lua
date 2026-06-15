@@ -582,9 +582,9 @@ local function auto_start_for_dot_directory()
     return
   end
 
-  local target = tostring(vim.fn.argv(0) or "")
-  if target ~= "." and target ~= "./" then
-    -- `nvim some-file` should only register commands, not lock the file.
+  local started_with_dot = vim.tbl_contains(vim.v.argv, ".") or vim.tbl_contains(vim.v.argv, "./")
+  if not started_with_dot then
+    -- Directory plugins like Oil can rewrite argv(0), so inspect original argv.
     return
   end
 
