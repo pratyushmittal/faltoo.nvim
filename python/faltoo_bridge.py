@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import logging
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -23,6 +24,9 @@ from faltoobot.sessions import (
     get_session,
     prewarm_openai_websocket,  # ty: ignore[unresolved-import]
 )
+
+logger = logging.getLogger("faltoobot.faltoo_bridge")
+PREWARM_TIMEOUT_SECONDS = 20.0
 
 # Logging can change when the workspace/session changes, so remember the last one.
 _configured_logging: tuple[Path, str] | None = None
@@ -175,7 +179,18 @@ async def _stream_answer(session: Session, emit: Emit) -> None:
 
 
 async def prewarm(workspace: Path) -> int:
-    await prewarm_openai_websocket(_session(workspace))
+    session = _session(workspace)
+    try:
+        await asyncio.wait_for(
+            prewarm_openai_websocket(session),
+            timeout=PREWARM_TIMEOUT_SECONDS,
+        )
+    except TimeoutError:
+        # Prewarm is best-effort; it must not block a later user submit forever.
+        logger.warning("OpenAI websocket prewarm timed out")
+    except Exception:
+        # Faltoo can still answer without a prewarmed websocket.
+        logger.exception("OpenAI websocket prewarm failed")
     return 0
 
 

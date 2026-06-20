@@ -378,7 +378,6 @@ end
 local function ask_question()
   local return_win = vim.api.nvim_get_current_win()
   local initial_text = state.pending_question or history_modal.selected_reply_text() or ""
-  bridge_api.prewarm(workspace())
   modals.ask({
     return_win = return_win,
     initial_text = initial_text,
