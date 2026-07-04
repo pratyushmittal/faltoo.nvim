@@ -152,15 +152,11 @@ def slash_commands() -> int:
 
 
 def _expand_slash_command(text: str) -> str:
-    command = text.strip()
-    prompt = (
-        SlashCommandStore(excluded_commands=BUILTIN_SLASH_COMMANDS)
-        .commands()
-        .get(command)
-    )
-    if prompt is None:
-        return text
-    return prompt.template
+    command, _separator, args_text = text.strip().partition(" ")
+    message = SlashCommandStore(
+        excluded_commands=BUILTIN_SLASH_COMMANDS
+    ).get_prompt_message(command, args_text)  # ty: ignore[unresolved-attribute]
+    return message if message is not None else text
 
 
 # Streaming code emits small updates; the server maps them to JSON lines for Neovim.
