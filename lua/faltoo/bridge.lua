@@ -1,5 +1,7 @@
 local M = {}
 
+local PING_TIMEOUT_MS = 2000
+
 ---@class FaltooBridgeRequest
 ---@field on_event fun(event: table)
 ---@field on_done fun(ok: boolean)
@@ -140,6 +142,19 @@ local function handle_server_line(line)
   end
 end
 
+local function stop_server()
+  local active_job = job
+  if not active_job or vim.fn.jobwait({ active_job }, 0)[1] ~= -1 then
+    return
+  end
+
+  job = nil
+  -- Stopped bridge requests will never receive a JSON response.
+  fail_requests("")
+  vim.fn.jobstop(active_job)
+  vim.fn.jobwait({ active_job }, 1000)
+end
+
 local function start_server()
   if job and vim.fn.jobwait({ job }, 0)[1] == -1 then
     -- Reuse the live Python process so websocket prewarm state survives.
@@ -178,7 +193,13 @@ local function start_server()
         end
       end
     end,
-    on_exit = function(_, code)
+    on_exit = function(exited_job, code)
+      if job ~= exited_job then
+        -- Old jobstop() exits can arrive after a fresh bridge is already active.
+        -- Without this, the old exit would clear the new job and fail its request.
+        return
+      end
+
       local message = table.concat(stderr, "\n")
       job = nil
       pending = ""
@@ -205,7 +226,7 @@ local function send_server_request(args, input, on_event, on_done)
   if not job then
     -- start_server() already reported why the bridge could not start.
     on_done(false)
-    return
+    return nil
   end
 
   -- Match each async server response with the callbacks for this request.
@@ -221,6 +242,22 @@ local function send_server_request(args, input, on_event, on_done)
     -- The server may have exited between start_server() and chansend().
     complete_request(id, false, "Faltoo bridge server is not accepting requests")
   end
+
+  return id
+end
+
+local function ping_bridge(on_done)
+  local id = send_server_request({ "ping" }, "{}", function() end, on_done)
+  if not id then
+    return
+  end
+
+  vim.defer_fn(function()
+    if requests[id] then
+      -- A healthy bridge answers ping immediately; no answer means it is wedged.
+      complete_request(id, false, "")
+    end
+  end, PING_TIMEOUT_MS)
 end
 
 ---@param args string[]
@@ -245,7 +282,15 @@ function M.prewarm(workspace)
 end
 
 function M.stream(args, input, on_event, on_done)
-  send_server_request(args, input, on_event, on_done)
+  -- A long-lived Python bridge can get wedged: chansend() succeeds, but stdin is no longer read.
+  -- Ping first so we can restart that bridge before sending the real user request.
+  ping_bridge(function(ok)
+    if not ok then
+      -- The old bridge accepted input but did not answer; restart before submit.
+      stop_server()
+    end
+    send_server_request(args, input, on_event, on_done)
+  end)
 end
 
 return M

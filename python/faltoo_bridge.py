@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from faltoobot.faltoochat.git import get_unstaged_files, is_git_workspace
-from faltoobot.faltoochat.logging_config import configure_logging  # ty: ignore[unresolved-import]
+from faltoobot.faltoochat.logging_config import configure_logging
 from faltoobot.faltoochat.review_api import Review, reviews_prompt
 from faltoobot.faltoochat.slash_commands import SlashCommandStore
 from faltoobot.faltoochat.stream import get_event_text
@@ -22,7 +22,7 @@ from faltoobot.sessions import (
     get_dir_chat_key,
     get_messages,
     get_session,
-    prewarm_openai_websocket,  # ty: ignore[unresolved-import]
+    prewarm_openai_websocket,
 )
 
 logger = logging.getLogger("faltoobot.faltoo_bridge")
@@ -232,6 +232,8 @@ async def _run_server_command(
     command: str, payload: dict[str, Any], emit: Emit
 ) -> None:
     workspace = Path(str(payload.get("workspace") or Path.cwd()))
+    if command == "ping":
+        return
     if command == "prewarm":
         await prewarm(workspace)
     elif command == "append-review":
