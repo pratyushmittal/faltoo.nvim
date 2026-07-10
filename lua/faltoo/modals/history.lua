@@ -316,7 +316,8 @@ local function open_window()
   })
 
   local index = math.max(1, #messages)
-  local function render()
+  ---@param is_cursor_reset? boolean
+  local function render(is_cursor_reset)
     if not vim.api.nvim_buf_is_valid(buf) then
       -- The modal may have been closed while a keybinding was still queued.
       return
@@ -327,9 +328,15 @@ local function open_window()
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
     vim.bo[buf].modifiable = false
     if vim.api.nvim_win_is_valid(win) then
-      -- Keep the live stream scrolled to its newest bullet while it grows.
-      local cursor_line = state.answering and index == #messages and #lines or 1
-      vim.api.nvim_win_set_cursor(win, { cursor_line, 0 })
+      -- Replacing all lines can move the cursor; preserve its reading position on updates.
+      local cursor = vim.api.nvim_win_get_cursor(win)
+      cursor[1] = is_cursor_reset and 1 or math.min(cursor[1], #lines)
+      cursor[2] = is_cursor_reset and 0 or math.min(cursor[2], #(lines[cursor[1]] or ""))
+      if state.answering and index == #messages and state.stream_classes ~= "answer" then
+        -- Compact non-answer stream items are short, so keep following the newest one.
+        cursor = { #lines, 0 }
+      end
+      vim.api.nvim_win_set_cursor(win, cursor)
     end
   end
 
@@ -341,7 +348,7 @@ local function open_window()
       return
     end
     index = next_index
-    render()
+    render(true)
   end
 
   local function update()
@@ -386,7 +393,7 @@ local function open_window()
   })
   vim.keymap.set("n", "q", M.close, { buffer = buf, silent = true })
   vim.keymap.set("n", "<Esc>", M.close, { buffer = buf, silent = true })
-  render()
+  render(true)
   return { win = win, buf = buf, update = update }
 end
 

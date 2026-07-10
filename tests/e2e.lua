@@ -161,13 +161,28 @@ if not fake_bridge.active_stream then
   error("Ask submit did not start a stream")
 end
 
+-- Stream updates should not move the cursor while reading an older message.
+helpers.press(history_buf, "n", "p")
+vim.api.nvim_win_set_cursor(0, { 3, 4 })
+fake_bridge.active_stream.on_event({ is_new = true, classes = "tool", text = "checking cursor" })
+local older_cursor = vim.api.nvim_win_get_cursor(0)
+if older_cursor[1] ~= 3 or older_cursor[2] ~= 4 then
+  error("History stream moved the cursor in an older message")
+end
+helpers.press(history_buf, "n", "n")
+
 -- Live stream should clip tool bullets but keep assistant answers complete.
 local long_tool = "read sample.txt " .. string.rep("tool output ", 12) .. "hidden tail"
 local answer_tail = string.rep("full response ", 12) .. "visible tail"
 local long_answer = "assistant answer " .. answer_tail
 fake_bridge.active_stream.on_event({ is_new = true, classes = "tool", text = long_tool })
+vim.api.nvim_win_set_cursor(0, { 1, 2 })
 fake_bridge.active_stream.on_event({ is_new = false, classes = "answer", text = "assistant answer " })
 fake_bridge.active_stream.on_event({ is_new = false, classes = "answer", text = answer_tail })
+local answer_cursor = vim.api.nvim_win_get_cursor(0)
+if answer_cursor[1] ~= 1 or answer_cursor[2] ~= 2 then
+  error("Assistant answer stream moved the history cursor")
+end
 local streaming_text = helpers.buffer_text(history_buf)
 helpers.contains(streaming_text, "assistant · streaming")
 helpers.contains(streaming_text, "- read sample.txt")
