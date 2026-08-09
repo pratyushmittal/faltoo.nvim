@@ -37,7 +37,7 @@ function M.open(opts)
     col = col,
   })
 
-  local function cancel()
+  local function force_close()
     utils.leave_insert_mode()
     utils.close_window(win)
     if opts.return_win and vim.api.nvim_win_is_valid(opts.return_win) then
@@ -46,10 +46,21 @@ function M.open(opts)
     end
   end
 
+  local function close()
+    local text = vim.trim(table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n"))
+    if text ~= "" then
+      -- Drafts should only close after they are submitted or explicitly cleared.
+      vim.notify("Input is not empty. Submit or clear it before closing.", vim.log.levels.WARN)
+      return
+    end
+
+    force_close()
+  end
+
   local function save()
     local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
     local text = vim.trim(table.concat(lines, "\n"))
-    cancel()
+    force_close()
     opts.on_save(text)
   end
 
@@ -59,8 +70,8 @@ function M.open(opts)
   vim.keymap.set({ "n", "i" }, "<C-s>", save, { buffer = buf, silent = true })
   utils.map_file_reference(buf, win, opts.repo_files)
   utils.map_slash_commands(buf, win, opts.slash_commands)
-  vim.keymap.set("n", "q", cancel, { buffer = buf, silent = true })
-  vim.keymap.set("n", "<Esc>", cancel, { buffer = buf, silent = true })
+  vim.keymap.set("n", "q", close, { buffer = buf, silent = true })
+  vim.keymap.set("n", "<Esc>", close, { buffer = buf, silent = true })
   if #initial_lines > 0 then
     local last_line = initial_lines[#initial_lines] or ""
     vim.api.nvim_win_set_cursor(win, { #initial_lines, #last_line })

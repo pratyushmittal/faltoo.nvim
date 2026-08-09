@@ -59,19 +59,28 @@ function M.open(opts)
     col = col,
   })
 
+  local function force_close()
+    utils.leave_insert_mode()
+    utils.close_window(win)
+    utils.close_window(detail_win)
+  end
+
+  local function close()
+    local text = vim.trim(table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n"))
+    if text ~= "" then
+      -- Drafts should only close after they are submitted or explicitly cleared.
+      vim.notify("Input is not empty. Submit or clear it before closing.", vim.log.levels.WARN)
+      return
+    end
+
+    force_close()
+  end
+
   local function submit()
     local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
     local text = vim.trim(table.concat(lines, "\n"))
-    utils.leave_insert_mode()
-    utils.close_window(win)
-    utils.close_window(detail_win)
+    force_close()
     opts.on_submit(text)
-  end
-
-  local function cancel()
-    utils.leave_insert_mode()
-    utils.close_window(win)
-    utils.close_window(detail_win)
   end
 
   vim.keymap.set({ "n", "i" }, "<CR>", submit, { buffer = buf, silent = true })
@@ -79,8 +88,8 @@ function M.open(opts)
   vim.keymap.set("n", "<S-CR>", "o", { buffer = buf, silent = true })
   vim.keymap.set({ "n", "i" }, "<C-s>", submit, { buffer = buf, silent = true })
   utils.map_file_reference(buf, win, opts.repo_files)
-  vim.keymap.set("n", "q", cancel, { buffer = buf, silent = true })
-  vim.keymap.set("n", "<Esc>", cancel, { buffer = buf, silent = true })
+  vim.keymap.set("n", "q", close, { buffer = buf, silent = true })
+  vim.keymap.set("n", "<Esc>", close, { buffer = buf, silent = true })
   if #initial_lines > 0 then
     local last_line = initial_lines[#initial_lines] or ""
     vim.api.nvim_win_set_cursor(win, { #initial_lines, #last_line })

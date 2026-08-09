@@ -100,6 +100,10 @@ for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
 end
 local comment_buf = vim.api.nvim_get_current_buf()
 vim.api.nvim_buf_set_lines(comment_buf, 0, -1, false, { "please fix this" })
+helpers.press(comment_buf, "n", "<Esc>")
+if vim.api.nvim_get_current_buf() ~= comment_buf then
+  error("Comment modal closed with unsaved input")
+end
 helpers.press(comment_buf, "i", "<CR>")
 helpers.contains(faltoo.status(), "1 comment(s)")
 
@@ -132,7 +136,23 @@ local ask_buf = vim.api.nvim_get_current_buf()
 if helpers.buffer_text(ask_buf):find("review answer", 1, true) then
   error("Normal reply reused stale history selection")
 end
+helpers.press(ask_buf, "n", "<Esc>")
+if vim.api.nvim_get_current_buf() ~= history_buf then
+  error("Ask modal did not close with empty input")
+end
+
+vim.cmd("Faltoo ask")
+ask_buf = vim.api.nvim_get_current_buf()
+vim.api.nvim_buf_set_lines(ask_buf, 0, -1, false, { "draft reply" })
 helpers.press(ask_buf, "n", "q")
+if vim.api.nvim_get_current_buf() ~= ask_buf then
+  error("Ask modal q closed with unsaved input")
+end
+vim.api.nvim_buf_set_lines(ask_buf, 0, -1, false, { "" })
+helpers.press(ask_buf, "n", "q")
+if vim.api.nvim_get_current_buf() ~= history_buf then
+  error("Ask modal did not close after clearing input")
+end
 
 -- Visual reply should seed selected text into Ask AI.
 vim.api.nvim_win_set_cursor(0, { 3, 0 })
