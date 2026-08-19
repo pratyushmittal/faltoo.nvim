@@ -133,7 +133,15 @@ def _normalize_comments(items: list[dict[str, Any]]) -> list[Review]:
 
 
 BUILTIN_SLASH_COMMANDS = frozenset(
-    {"/compact", "/name", "/reset", "/resume", "/status", "/tree"}
+    {
+        "/compact",
+        "/name",
+        "/reset",
+        "/resume",
+        "/run-hooks",
+        "/status",
+        "/tree",
+    }
 )
 
 
