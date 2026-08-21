@@ -182,20 +182,23 @@ local function text_before_cursor(win, buf)
   return table.concat(lines, "\n")
 end
 
-function M.map_slash_commands(buf, win, slash_commands)
+---@param buf integer
+---@param win integer
+---@param slash_commands fun(): table[]
+---@param on_command fun(command: string): boolean
+function M.map_slash_commands(buf, win, slash_commands, on_command)
   local function pick_command()
     if text_before_cursor(win, buf) ~= "" then
-      -- Only a leading slash opens saved prompt completion.
+      -- Only a leading slash opens built-in and saved command completion.
       M.insert_text_at_window(win, buf, "/")
       return
     end
 
     local opened = select_slash_command(slash_commands, function(command)
-      if command then
-        M.insert_text_at_window(win, buf, command)
+      if command and on_command(command) then
         return
       end
-      M.insert_text_at_window(win, buf, "/")
+      M.insert_text_at_window(win, buf, command or "/")
     end)
     if not opened then
       M.insert_text_at_window(win, buf, "/")

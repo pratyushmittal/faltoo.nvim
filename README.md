@@ -90,7 +90,7 @@ Ask modal keybindings:
 - `<Enter>` saves the question and closes the modal.
 - `<S-CR>` inserts a newline.
 - `@` opens a repository file picker and inserts `` `relative/path` ``. It uses Telescope when available, otherwise `vim.ui.select`.
-- Leading `/` opens saved FaltooBot slash commands.
+- Leading `/` opens built-in and saved FaltooBot slash commands. `/run-hooks` asks which Git changes to check.
 - `<C-s>` also saves the question.
 - Normal-mode `<Esc>` or `q` cancels.
 

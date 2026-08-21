@@ -6,6 +6,7 @@ function M.install(repo)
     active_stream = nil,
     unstaged_files = {},
     prewarm_count = 0,
+    hook_scope = nil,
   }
 
   -- Replace the Python bridge so the E2E flow stays fast and deterministic.
@@ -15,7 +16,9 @@ function M.install(repo)
         return vim.json.encode({ messages = state.messages })
       end
       if args[1] == "slash-commands" then
-        return vim.json.encode({ commands = {} })
+        return vim.json.encode({
+          commands = { { command = "/run-hooks", preview = "run hooks for git changes" } },
+        })
       end
       if args[1] == "unstaged-files" then
         return vim.json.encode({ ok = true, files = state.unstaged_files })
@@ -32,6 +35,14 @@ function M.install(repo)
 
     stream = function(args, input, on_event, on_done)
       local payload = vim.json.decode(input or "{}")
+
+      if args[1] == "run-hooks" then
+        state.hook_scope = payload.scope
+        on_event({ is_new = true, classes = "status", text = "Running post-response hook: Review" })
+        on_event({ is_new = true, classes = "done", text = "Hooks finished." })
+        on_done(true)
+        return
+      end
 
       if args[1] == "append-review" then
         table.insert(state.messages, { role = "user", text = "review comment" })

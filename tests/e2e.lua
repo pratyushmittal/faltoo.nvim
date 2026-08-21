@@ -236,6 +236,27 @@ fake_bridge.active_stream.on_event({ is_new = true, classes = "done", text = "As
 fake_bridge.active_stream.on_done(true)
 helpers.contains(helpers.buffer_text(history_buf), "assistant answer")
 
+-- Selecting /run-hooks should ask for a diff scope and start that hook stream.
+local original_select = vim.ui.select
+vim.ui.select = function(items, opts, on_choice)
+  if opts.prompt == "Faltoo slash command" then
+    on_choice(items[1])
+    return
+  end
+  if opts.prompt == "Run hooks for git changes" then
+    on_choice("unstaged")
+    return
+  end
+  error("Unexpected picker: " .. tostring(opts.prompt))
+end
+helpers.press(history_buf, "n", "r")
+ask_buf = vim.api.nvim_get_current_buf()
+helpers.press(ask_buf, "i", "/")
+vim.ui.select = original_select
+if fake_bridge.hook_scope ~= "unstaged" then
+  error("Run hooks did not use the selected diff scope")
+end
+
 -- Opening unstaged files from history should leave the modal window first.
 fake_bridge.unstaged_files = { tmp .. "/sample.txt" }
 helpers.press(history_buf, "n", "R")

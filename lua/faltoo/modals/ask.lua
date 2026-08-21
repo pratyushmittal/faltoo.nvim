@@ -7,6 +7,7 @@ local M = {}
 ---@field repo_files fun(): string[]
 ---@field slash_commands fun(): table[]
 ---@field on_save fun(text: string)
+---@field on_run_hooks fun()
 ---@field return_win? integer
 
 ---@param opts FaltooAskModalOpts
@@ -69,7 +70,15 @@ function M.open(opts)
   vim.keymap.set("n", "<S-CR>", "o", { buffer = buf, silent = true })
   vim.keymap.set({ "n", "i" }, "<C-s>", save, { buffer = buf, silent = true })
   utils.map_file_reference(buf, win, opts.repo_files)
-  utils.map_slash_commands(buf, win, opts.slash_commands)
+  utils.map_slash_commands(buf, win, opts.slash_commands, function(command)
+    if command ~= "/run-hooks" then
+      return false
+    end
+
+    force_close()
+    opts.on_run_hooks()
+    return true
+  end)
   vim.keymap.set("n", "q", close, { buffer = buf, silent = true })
   vim.keymap.set("n", "<Esc>", close, { buffer = buf, silent = true })
   if #initial_lines > 0 then

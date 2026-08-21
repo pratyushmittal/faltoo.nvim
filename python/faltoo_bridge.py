@@ -15,6 +15,7 @@ from faltoobot.faltoochat.logging_config import configure_logging
 from faltoobot.faltoochat.review_api import Review, reviews_prompt
 from faltoobot.faltoochat.slash_commands import SlashCommandStore
 from faltoobot.faltoochat.stream import get_event_text
+from faltoobot.post_response_hooks import HookDiffScope
 from faltoobot.sessions import (
     Session,
     append_user_turn,
@@ -132,28 +133,27 @@ def _normalize_comments(items: list[dict[str, Any]]) -> list[Review]:
     return comments
 
 
-BUILTIN_SLASH_COMMANDS = frozenset(
-    {
-        "/compact",
-        "/name",
-        "/reset",
-        "/resume",
-        "/run-hooks",
-        "/status",
-        "/tree",
-    }
-)
+BUILTIN_SLASH_COMMANDS = {
+    "/compact": "compact this session history",
+    "/name": "name the current session",
+    "/reset": "start a fresh session",
+    "/resume": "resume another session",
+    "/run-hooks": "run hooks for git changes",
+    "/status": "show bot status",
+    "/tree": "open the current session messages file",
+}
 
 
 def slash_commands() -> int:
-    commands = SlashCommandStore(excluded_commands=BUILTIN_SLASH_COMMANDS).commands()
+    commands = dict(BUILTIN_SLASH_COMMANDS)
+    saved_commands = SlashCommandStore(
+        excluded_commands=BUILTIN_SLASH_COMMANDS
+    ).commands()
+    for command, prompt in saved_commands.items():
+        commands[command] = prompt.preview
     payload = [
-        {
-            "command": command,
-            "preview": prompt.preview,
-            "template": prompt.template,
-        }
-        for command, prompt in sorted(commands.items())
+        {"command": command, "preview": preview}
+        for command, preview in sorted(commands.items())
     ]
     _print_json({"commands": payload})
     return 0
@@ -171,15 +171,20 @@ def _expand_slash_command(text: str) -> str:
 Emit = Callable[[bool, str, str], None]
 
 
-async def _stream_answer(session: Session, emit: Emit) -> None:
-    async for event in get_answer_streaming(session):
+async def _stream_answer(
+    session: Session,
+    emit: Emit,
+    against: HookDiffScope | None = None,
+    done_text: str = "Assistant response saved.",
+) -> None:
+    async for event in get_answer_streaming(session, against=against):
         is_new, classes, text = get_event_text(event)
         # Empty new events separate adjacent streaming blocks in the UI.
         if not text.strip() and not is_new:
             continue
         emit(is_new, classes, text)
 
-    emit(True, "done", "Assistant response saved.")
+    emit(True, "done", done_text)
 
 
 async def prewarm(workspace: Path) -> int:
@@ -232,6 +237,16 @@ async def append_message(workspace: Path, text: str, emit: Emit) -> int:
     return 0
 
 
+async def run_hooks(workspace: Path, scope: str, emit: Emit) -> int:
+    await _stream_answer(
+        _session(workspace),
+        emit,
+        against=HookDiffScope(scope),
+        done_text="Hooks finished.",
+    )
+    return 0
+
+
 async def _run_server_command(
     command: str, payload: dict[str, Any], emit: Emit
 ) -> None:
@@ -244,6 +259,8 @@ async def _run_server_command(
         await append_review(workspace, _payload_comments(payload), emit)
     elif command == "append-message":
         await append_message(workspace, str(payload.get("text") or ""), emit)
+    elif command == "run-hooks":
+        await run_hooks(workspace, str(payload.get("scope") or ""), emit)
     else:
         raise ValueError(f"Unsupported server command: {command}")
 

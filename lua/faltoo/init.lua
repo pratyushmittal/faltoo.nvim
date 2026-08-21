@@ -238,7 +238,7 @@ end
 ---@field args string[]
 ---@field payload table
 ---@field start_status string
----@field on_submit fun()
+---@field on_submit? fun()
 ---@field on_complete? fun()
 
 ---@param opts FaltooStreamSubmissionOpts
@@ -256,7 +256,9 @@ local function stream_submission(opts)
       return
     end
     submitted = true
-    opts.on_submit()
+    if opts.on_submit then
+      opts.on_submit()
+    end
   end
 
   set_submitting_and_notify(opts.start_status)
@@ -358,6 +360,21 @@ local function submit_pending_request()
   submit_comments()
 end
 
+local function run_hooks()
+  vim.ui.select({ "all", "unstaged" }, { prompt = "Run hooks for git changes" }, function(scope)
+    if not scope then
+      -- Closing the scope picker should leave the session unchanged.
+      return
+    end
+
+    stream_submission({
+      args = { "run-hooks" },
+      payload = { workspace = workspace(), scope = scope },
+      start_status = "Running Faltoo hooks...",
+    })
+  end)
+end
+
 local function slash_commands()
   local output = bridge_api.run({ "slash-commands" })
   if not output then
@@ -384,6 +401,7 @@ local function ask_question()
     repo_files = git_api.repo_files,
     slash_commands = slash_commands,
     on_save = save_question,
+    on_run_hooks = run_hooks,
   })
 end
 
