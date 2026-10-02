@@ -11,6 +11,20 @@ local default_mappings = {
   prev_comment = { modes = "n", lhs = "[c" },
 }
 
+local descs = {
+  comment = "Faltoo line comment",
+  file_comment = "Faltoo file comment",
+  history = "Faltoo open history",
+  ask = "Ask Faltoo",
+  submit = "Faltoo submit",
+  open_unstaged = "Faltoo open unstaged files",
+  next_comment = "Faltoo next comment",
+  prev_comment = "Faltoo previous comment",
+}
+
+-- These also work outside review buffers, e.g. from an empty start screen.
+local global_names = { "history", "ask" }
+
 ---@class FaltooMapping
 ---@field lhs string
 ---@field modes? string|string[]
@@ -18,29 +32,11 @@ local default_mappings = {
 ---@class FaltooSetupOpts
 ---@field mappings? table<string, FaltooMapping|string|false>|false
 
----@class FaltooKeymapCallbacks
----@field comment fun(visual: boolean)
----@field file_comment fun()
----@field history fun()
----@field ask fun()
----@field submit fun()
----@field open_unstaged fun()
----@field next_comment fun()
----@field prev_comment fun()
-
 local state = {
   mappings = vim.deepcopy(default_mappings),
-  mapped = {},
-  global_mapped = {},
+  mapped = {}, -- buffer -> list of { mode, lhs } set by map_buffer
+  global_mapped = {}, -- list of { mode, lhs } set by map_global
 }
-
-local function mapping_modes(mapping)
-  local modes = mapping.modes or "n"
-  if type(modes) == "string" then
-    return { modes }
-  end
-  return modes
-end
 
 local function configured_mappings(opts)
   local configured = vim.deepcopy(default_mappings)
@@ -54,27 +50,40 @@ local function configured_mappings(opts)
   end
 
   for name, override in pairs(mappings) do
+    if type(override) == "string" then
+      -- A plain string only changes the lhs and keeps the default modes.
+      override = { lhs = override }
+    end
     if override == false then
       configured[name] = false
-    elseif type(override) == "string" then
-      local mapping = type(configured[name]) == "table" and configured[name] or {}
-      mapping.lhs = override
-      configured[name] = mapping
     elseif type(override) == "table" then
-      local mapping = type(configured[name]) == "table" and configured[name] or {}
-      configured[name] = vim.tbl_extend("force", mapping, override)
+      configured[name] = vim.tbl_extend("force", configured[name] or {}, override)
     end
   end
 
   return configured
 end
 
-local function mapped_buffers()
-  local bufs = {}
-  for buf, _ in pairs(state.mapped) do
-    table.insert(bufs, buf)
+-- Return the configured lhs and modes, or nil when the mapping is disabled.
+---@param name string
+---@return string|nil lhs
+---@return string[] modes
+local function mapping_for(name)
+  local mapping = state.mappings[name]
+  if not mapping or not mapping.lhs then
+    -- Users can disable individual mappings with `false`.
+    return nil, {}
   end
-  return bufs
+  local modes = mapping.modes or "n"
+  if type(modes) == "string" then
+    return mapping.lhs, { modes }
+  end
+  return mapping.lhs, modes
+end
+
+---@param opts? FaltooSetupOpts
+function M.setup(opts)
+  state.mappings = configured_mappings(opts)
 end
 
 function M.unmap_buffer(buf)
@@ -91,78 +100,40 @@ function M.unmap_global()
   state.global_mapped = {}
 end
 
-local function map_action(buf, name, callback, desc)
-  local mapping = state.mappings[name]
-  if mapping == false or mapping == nil or mapping.lhs == nil then
-    -- Users can disable individual mappings with `false`.
-    return
-  end
-
-  for _, mode in ipairs(mapping_modes(mapping)) do
-    local mapped_mode = mode
-    vim.keymap.set(mapped_mode, mapping.lhs, function()
-      callback(mapped_mode)
-    end, { buffer = buf, silent = true, desc = desc })
-    table.insert(state.mapped[buf], { mode = mapped_mode, lhs = mapping.lhs })
+function M.unmap_all()
+  -- Clearing existing keys while iterating with pairs() is allowed in Lua.
+  for buf, _ in pairs(state.mapped) do
+    M.unmap_buffer(buf)
   end
 end
 
----@param opts? FaltooSetupOpts
-function M.setup(opts)
-  state.mappings = configured_mappings(opts)
-end
-
----@param callbacks FaltooKeymapCallbacks
+---@param callbacks table<string, fun()>
 function M.map_global(callbacks)
   M.unmap_global()
-
-  local actions = {
-    history = { callback = callbacks.history, desc = "Faltoo open history" },
-    ask = { callback = callbacks.ask, desc = "Ask Faltoo" },
-  }
-
-  for name, action in pairs(actions) do
-    local mapping = state.mappings[name]
-    if mapping ~= false and mapping ~= nil and mapping.lhs ~= nil then
-      for _, mode in ipairs(mapping_modes(mapping)) do
-        local ok = pcall(vim.keymap.set, mode, mapping.lhs, action.callback, {
-          silent = true,
-          desc = action.desc,
-          unique = true,
-        })
-        if ok then
-          -- Only delete global Faltoo maps we successfully created.
-          table.insert(state.global_mapped, { mode = mode, lhs = mapping.lhs })
-        end
+  for _, name in ipairs(global_names) do
+    local lhs, modes = mapping_for(name)
+    for _, mode in ipairs(modes) do
+      local ok = pcall(vim.keymap.set, mode, lhs, callbacks[name], { silent = true, desc = descs[name], unique = true })
+      if ok then
+        -- Only delete global Faltoo maps we successfully created; `unique` keeps user maps.
+        table.insert(state.global_mapped, { mode = mode, lhs = lhs })
       end
     end
   end
 end
 
 ---@param buf integer
----@param callbacks FaltooKeymapCallbacks
+---@param callbacks table<string, fun()>
 function M.map_buffer(buf, callbacks)
   M.unmap_buffer(buf)
   state.mapped[buf] = {}
-
-  map_action(buf, "comment", function(mode)
-    callbacks.comment(mode ~= "n")
-  end, "Faltoo line comment")
-  map_action(buf, "file_comment", callbacks.file_comment, "Faltoo file comment")
-  map_action(buf, "history", callbacks.history, "Faltoo open history")
-  map_action(buf, "ask", callbacks.ask, "Ask Faltoo")
-  map_action(buf, "submit", callbacks.submit, "Faltoo submit")
-  map_action(buf, "open_unstaged", callbacks.open_unstaged, "Faltoo open unstaged files")
-  map_action(buf, "next_comment", callbacks.next_comment, "Faltoo next comment")
-  map_action(buf, "prev_comment", callbacks.prev_comment, "Faltoo previous comment")
-end
-
-function M.unmap_all()
-  for _, buf in ipairs(mapped_buffers()) do
-    -- Copy keys first because unmap_buffer mutates state.mapped.
-    M.unmap_buffer(buf)
+  for name, desc in pairs(descs) do
+    local lhs, modes = mapping_for(name)
+    for _, mode in ipairs(modes) do
+      vim.keymap.set(mode, lhs, callbacks[name], { buffer = buf, silent = true, desc = desc })
+      table.insert(state.mapped[buf], { mode = mode, lhs = lhs })
+    end
   end
-  state.mapped = {}
 end
 
 return M

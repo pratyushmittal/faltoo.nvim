@@ -12,30 +12,15 @@ local M = {}
 
 ---@param opts FaltooCommentModalOpts
 function M.open(opts)
-  local buf = vim.api.nvim_create_buf(false, true)
-  vim.bo[buf].buftype = "nofile"
-  vim.bo[buf].bufhidden = "wipe"
-  vim.bo[buf].filetype = "markdown"
-  local initial_lines = {}
-  if opts.initial_text and opts.initial_text ~= "" then
-    initial_lines = vim.split(opts.initial_text, "\n", { plain = true })
-    vim.api.nvim_buf_set_lines(buf, 0, -1, false, initial_lines)
-  end
-
-  local details = opts.details or {}
-  local width, col = utils.right_layout(0.42, 36)
+  -- Narrow right-aligned layout: review details above, comment textarea below.
+  local width = math.max(36, math.floor(vim.o.columns * 0.42))
+  local col = math.max(0, vim.o.columns - width - 4)
   local height = 7
-  local detail_height = math.max(1, math.min(#details, 16))
-  local total_height = detail_height + height + 4
-  local row = math.max(0, math.floor((vim.o.lines - total_height) / 2))
+  local detail_height = math.max(1, math.min(#opts.details, 16))
+  local row = math.max(0, math.floor((vim.o.lines - detail_height - height - 4) / 2))
 
-  local detail_buf = vim.api.nvim_create_buf(false, true)
-  vim.bo[detail_buf].buftype = "nofile"
-  vim.bo[detail_buf].bufhidden = "wipe"
-  vim.bo[detail_buf].filetype = "markdown"
-  vim.api.nvim_buf_set_lines(detail_buf, 0, -1, false, details)
+  local detail_buf = utils.scratch_buf(table.concat(opts.details, "\n"))
   vim.bo[detail_buf].modifiable = false
-
   local detail_win = vim.api.nvim_open_win(detail_buf, false, {
     relative = "editor",
     style = "minimal",
@@ -47,6 +32,7 @@ function M.open(opts)
     col = col,
   })
 
+  local buf = utils.scratch_buf(opts.initial_text)
   local win = vim.api.nvim_open_win(buf, true, {
     relative = "editor",
     style = "minimal",
@@ -65,36 +51,8 @@ function M.open(opts)
     utils.close_window(detail_win)
   end
 
-  local function close()
-    local text = vim.trim(table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n"))
-    if text ~= "" then
-      -- Drafts should only close after they are submitted or explicitly cleared.
-      vim.notify("Input is not empty. Submit or clear it before closing.", vim.log.levels.WARN)
-      return
-    end
-
-    force_close()
-  end
-
-  local function submit()
-    local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-    local text = vim.trim(table.concat(lines, "\n"))
-    force_close()
-    opts.on_submit(text)
-  end
-
-  vim.keymap.set({ "n", "i" }, "<CR>", submit, { buffer = buf, silent = true })
-  vim.keymap.set("i", "<S-CR>", "<CR>", { buffer = buf, silent = true })
-  vim.keymap.set("n", "<S-CR>", "o", { buffer = buf, silent = true })
-  vim.keymap.set({ "n", "i" }, "<C-s>", submit, { buffer = buf, silent = true })
   utils.map_file_reference(buf, win, opts.repo_files)
-  vim.keymap.set("n", "q", close, { buffer = buf, silent = true })
-  vim.keymap.set("n", "<Esc>", close, { buffer = buf, silent = true })
-  if #initial_lines > 0 then
-    local last_line = initial_lines[#initial_lines] or ""
-    vim.api.nvim_win_set_cursor(win, { #initial_lines, #last_line })
-  end
-  vim.cmd("startinsert!")
+  utils.map_textarea(buf, win, force_close, opts.on_submit)
 end
 
 return M

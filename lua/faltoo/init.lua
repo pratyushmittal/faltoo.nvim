@@ -160,11 +160,6 @@ local function set_submitting(submitting, status)
   refresh_terminal_title()
 end
 
-local function set_submitting_and_notify(status)
-  set_submitting(true, status)
-  vim.notify(status)
-end
-
 local function ring_bell()
   local ok = pcall(function()
     io.stderr:write("\007")
@@ -203,10 +198,7 @@ local function reload_buffer(buf)
     return false
   end
   if not normal_buffer(buf) then
-    return false
-  end
-  local name = vim.api.nvim_buf_get_name(buf)
-  if name == "" or vim.fn.filereadable(name) == 0 then
+    -- Unnamed, deleted, or non-review buffers have nothing to reload.
     return false
   end
 
@@ -222,16 +214,14 @@ local function reload_buffer(buf)
 end
 
 local function reload_review_buffers()
-  local count = 0
   for buf, _ in pairs(state.saved) do
     if not vim.api.nvim_buf_is_valid(buf) or not vim.api.nvim_buf_is_loaded(buf) then
       -- Forget buffers that were closed while a Faltoo stream was running.
       state.saved[buf] = nil
-    elseif reload_buffer(buf) then
-      count = count + 1
+    else
+      reload_buffer(buf)
     end
   end
-  return count
 end
 
 ---@class FaltooStreamSubmissionOpts
@@ -261,7 +251,8 @@ local function stream_submission(opts)
     end
   end
 
-  set_submitting_and_notify(opts.start_status)
+  set_submitting(true, opts.start_status)
+  vim.notify(opts.start_status)
   history_modal.start_stream(opts.start_status)
   bridge_api.stream(opts.args, vim.json.encode(opts.payload), function(event)
     history_modal.update_stream(event)
@@ -271,23 +262,20 @@ local function stream_submission(opts)
     end
     update_status(event)
   end, function(ok)
-    set_submitting(false, state.status)
+    set_submitting(false, ok and state.status or "Faltoo request failed.")
     if ok then
       ring_bell()
       on_submit_once()
       -- The assistant may edit files through tools, so refresh readonly buffers.
       reload_review_buffers()
-      history_modal.finish_stream()
-      history_modal.refresh()
-      if opts.on_complete then
-        opts.on_complete()
-      end
-      return
+    else
+      vim.notify(state.status)
     end
-    set_submitting(false, "Faltoo request failed.")
     history_modal.finish_stream()
     history_modal.refresh()
-    vim.notify(state.status)
+    if ok and opts.on_complete then
+      opts.on_complete()
+    end
   end)
 end
 
@@ -309,6 +297,13 @@ local function submit_comments()
   })
 end
 
+---@param text string|nil
+local function set_pending_question(text)
+  state.pending_question = text
+  quit_guard.sync()
+  redraw_faltoo_status()
+end
+
 local function submit_chat_message(text)
   stream_submission({
     args = { "append-message" },
@@ -317,9 +312,7 @@ local function submit_chat_message(text)
     on_submit = function()
       if state.pending_question == text then
         -- Do not clear a newer pending question saved while this request was running.
-        state.pending_question = nil
-        quit_guard.sync()
-        redraw_faltoo_status()
+        set_pending_question(nil)
       end
     end,
     on_complete = function()
@@ -328,32 +321,24 @@ local function submit_chat_message(text)
         return
       end
 
-      vim.schedule(function()
-        vim.cmd("Faltoo history")
-      end)
+      vim.schedule(history_modal.open)
     end,
   })
 end
 
 local function save_question(text)
-  local had_question = state.pending_question ~= nil
-  if text == "" then
-    state.pending_question = nil
-    quit_guard.sync()
-    redraw_faltoo_status()
-    if had_question then
-      vim.notify("Cleared pending question")
-    end
-    return
+  if text ~= "" then
+    set_pending_question(text)
+    vim.notify("Saved question. Run :Faltoo submit to ask AI")
+  elseif state.pending_question then
+    -- Saving an empty draft clears the previously saved question.
+    set_pending_question(nil)
+    vim.notify("Cleared pending question")
   end
-  state.pending_question = text
-  quit_guard.sync()
-  redraw_faltoo_status()
-  vim.notify("Saved question. Run :Faltoo submit to ask AI")
 end
 
 local function submit_pending_request()
-  if state.pending_question and state.pending_question ~= "" then
+  if state.pending_question then
     submit_chat_message(state.pending_question)
     return
   end
@@ -375,66 +360,54 @@ local function run_hooks()
   end)
 end
 
+local function reset_session()
+  if state.submitting then
+    -- A running answer would be saved into the old session after reset.
+    vim.notify("Faltoo request is already running")
+    return
+  end
+  if not bridge_api.run({ "reset", "--workspace", workspace() }) then
+    -- bridge_api.run already displayed the bridge error.
+    return
+  end
+  history_modal.refresh()
+  vim.notify("Started a fresh Faltoo session")
+end
+
 local function slash_commands()
-  local output = bridge_api.run({ "slash-commands" })
-  if not output then
-    -- The bridge already reports errors, so keep completion empty.
-    return {}
-  end
-
-  local ok, payload = pcall(vim.json.decode, output)
-  if not ok or type(payload) ~= "table" or type(payload.commands) ~= "table" then
-    -- Invalid completion data should not break the Ask modal.
-    vim.notify("Faltoo slash command output was invalid", vim.log.levels.ERROR)
-    return {}
-  end
-
-  return payload.commands
+  -- Bridge errors are already reported; keep completion empty then.
+  return bridge_api.json({ "slash-commands" }, "commands") or {}
 end
 
 local function ask_question()
   local return_win = vim.api.nvim_get_current_win()
-  local initial_text = state.pending_question or history_modal.selected_reply_text() or ""
+  local initial_text = state.pending_question or ""
+  local selection = history_modal.selected_reply_text()
+  if selection then
+    -- Each selected history quote is appended to the saved draft.
+    initial_text = vim.trim(initial_text .. "\n\n" .. selection)
+  end
   modals.ask({
     return_win = return_win,
     initial_text = initial_text,
     repo_files = git_api.repo_files,
     slash_commands = slash_commands,
     on_save = save_question,
-    on_run_hooks = run_hooks,
+    commands = { ["/run-hooks"] = run_hooks, ["/reset"] = reset_session },
   })
-end
-
-local function show_history()
-  history_modal.open()
 end
 
 -- Map canonical paths to the paths we should open in Neovim.
 ---@return table<string, string>|nil
 local function unstaged_file_map()
-  local output = bridge_api.run({ "unstaged-files", "--workspace", workspace() })
-  if not output then
-    return nil
-  end
-
-  local ok, payload = pcall(vim.json.decode, output)
-  if not ok or type(payload) ~= "table" then
-    -- Bad bridge output would make buffer refresh delete/open the wrong files.
-    vim.notify("Faltoo unstaged files output was invalid", vim.log.levels.ERROR)
-    return nil
-  end
-  if payload.ok == false then
-    vim.notify(tostring(payload.error or "Not inside a git repository"), vim.log.levels.WARN)
-    return nil
-  end
-  if type(payload.files) ~= "table" then
-    -- Bad bridge output would make buffer refresh delete/open the wrong files.
-    vim.notify("Faltoo unstaged files output was invalid", vim.log.levels.ERROR)
+  local files = bridge_api.json({ "unstaged-files", "--workspace", workspace() }, "files")
+  if not files then
+    -- Opening/closing buffers from a failed git lookup could close the wrong files.
     return nil
   end
 
   local file_map = {}
-  for _, file in ipairs(payload.files) do
+  for _, file in ipairs(files) do
     local path = vim.fs.normalize(vim.fn.fnamemodify(tostring(file), ":p"))
     if vim.fn.filereadable(path) == 1 then
       -- Keep the bridge result safe even if a file changed after discovery.
@@ -485,7 +458,7 @@ local function refresh_unstaged_git_buffers()
     close_saved_buffers_not_in(file_map)
     -- With nothing to review as files, keep the user in the conversation view.
     vim.notify("No unstaged files")
-    show_history()
+    history_modal.open()
     return
   end
 
@@ -494,33 +467,40 @@ local function refresh_unstaged_git_buffers()
   vim.notify("Opened " .. count .. " unstaged file(s)")
 end
 
-local function is_visual_mode()
-  return vim.fn.mode():match("[vV]") ~= nil
+local function add_comment(is_file_comment)
+  if not state.enabled then
+    -- Comments are only collected while review mode is on.
+    return
+  end
+  -- Charwise, linewise, and blockwise visual modes all comment on selected lines.
+  comments_api.add(is_file_comment, vim.fn.mode():match("^[vV\22]") ~= nil)
 end
 
-local function add_line_comment(visual)
-  comments_api.add({ is_file_comment = false, visual = visual, enabled = state.enabled })
-end
+-- Review actions shared by keymaps (underscore names) and :Faltoo (dash names).
+local actions = {
+  ask = ask_question,
+  comment = function()
+    add_comment(false)
+  end,
+  file_comment = function()
+    add_comment(true)
+  end,
+  history = history_modal.open,
+  reset = reset_session,
+  submit = submit_pending_request,
+  open_unstaged = refresh_unstaged_git_buffers,
+  next_comment = function()
+    comments_api.jump(1)
+  end,
+  prev_comment = function()
+    comments_api.jump(-1)
+  end,
+}
 
-local function add_file_comment()
-  comments_api.add({ is_file_comment = true, visual = false, enabled = state.enabled })
-end
-
-local function keymap_callbacks()
-  return {
-    comment = add_line_comment,
-    file_comment = add_file_comment,
-    history = show_history,
-    ask = ask_question,
-    submit = submit_pending_request,
-    open_unstaged = refresh_unstaged_git_buffers,
-    next_comment = function()
-      comments_api.jump(1)
-    end,
-    prev_comment = function()
-      comments_api.jump(-1)
-    end,
-  }
+local function lock_buffer(buf)
+  make_readonly(buf)
+  keymaps_api.map_buffer(buf, actions)
+  comments_api.refresh()
 end
 
 local function open_unstaged_after_startup()
@@ -552,14 +532,12 @@ function M.on()
 
   -- Enable first so callbacks know review mode is active.
   state.enabled = true
-  keymaps_api.map_global(keymap_callbacks())
+  keymaps_api.map_global(actions)
 
   -- Lock currently open review buffers.
   for _, buf in ipairs(vim.api.nvim_list_bufs()) do
     if normal_buffer(buf) then
-      make_readonly(buf)
-      keymaps_api.map_buffer(buf, keymap_callbacks())
-      comments_api.refresh()
+      lock_buffer(buf)
     end
   end
 
@@ -570,9 +548,7 @@ function M.on()
     group = review_augroup,
     callback = function(event)
       if normal_buffer(event.buf) then
-        make_readonly(event.buf)
-        keymaps_api.map_buffer(event.buf, keymap_callbacks())
-        comments_api.refresh()
+        lock_buffer(event.buf)
         return
       end
 
@@ -688,7 +664,7 @@ function M.setup(opts)
   quit_guard.setup(function()
     return {
       submitting = state.submitting,
-      pending_question = state.pending_question ~= nil and state.pending_question ~= "",
+      pending_question = state.pending_question ~= nil,
       comment_count = comments_api.count(),
     }
   end)
@@ -701,47 +677,25 @@ function M.setup(opts)
 
   -- Recreate the command so setup() stays safe to call more than once.
   pcall(vim.api.nvim_del_user_command, "Faltoo")
+  local commands = { on = M.on, off = M.off, tree = M.tree }
+  for name, action in pairs(actions) do
+    commands[(name:gsub("_", "-"))] = action
+  end
+  local names = vim.tbl_keys(commands)
+  table.sort(names)
+
   ---@param opts { args: string }
   vim.api.nvim_create_user_command("Faltoo", function(opts)
-    local action = opts.args:lower()
-    if action == "on" then
-      M.on()
-    elseif action == "off" then
-      M.off()
-    elseif action == "tree" then
-      M.tree()
-    elseif action == "ask" then
-      ask_question()
-    elseif action == "comment" then
-      add_line_comment(is_visual_mode())
-    elseif action == "file-comment" then
-      add_file_comment()
-    elseif action == "history" then
-      show_history()
-    elseif action == "submit" then
-      submit_pending_request()
-    elseif action == "open-unstaged" then
-      refresh_unstaged_git_buffers()
-    else
-      vim.notify(
-        "Usage: :faltoo on | off | tree | ask | comment | file-comment | history | submit | open-unstaged",
-        vim.log.levels.ERROR
-      )
+    local action = commands[opts.args:lower()]
+    if not action then
+      vim.notify("Usage: :faltoo " .. table.concat(names, " | "), vim.log.levels.ERROR)
+      return
     end
+    action()
   end, {
     nargs = 1,
     complete = function()
-      return {
-        "on",
-        "off",
-        "tree",
-        "ask",
-        "comment",
-        "file-comment",
-        "history",
-        "submit",
-        "open-unstaged",
-      }
+      return names
     end,
   })
 end

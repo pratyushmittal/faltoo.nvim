@@ -7,25 +7,14 @@ local M = {}
 ---@field repo_files fun(): string[]
 ---@field slash_commands fun(): table[]
 ---@field on_save fun(text: string)
----@field on_run_hooks fun()
+---@field commands table<string, fun()> slash commands handled in Neovim instead of sent as text
 ---@field return_win? integer
 
 ---@param opts FaltooAskModalOpts
 function M.open(opts)
-  local buf = vim.api.nvim_create_buf(false, true)
-  vim.bo[buf].buftype = "nofile"
-  vim.bo[buf].bufhidden = "wipe"
-  vim.bo[buf].filetype = "markdown"
-  local initial_lines = {}
-  if opts.initial_text and opts.initial_text ~= "" then
-    initial_lines = vim.split(opts.initial_text, "\n", { plain = true })
-    vim.api.nvim_buf_set_lines(buf, 0, -1, false, initial_lines)
-  end
-
+  local buf = utils.scratch_buf(opts.initial_text)
   local width = math.max(50, math.floor(vim.o.columns * 0.7))
   local height = math.max(6, math.min(10, math.floor(vim.o.lines * 0.35)))
-  local row = math.floor((vim.o.lines - height) / 2)
-  local col = math.floor((vim.o.columns - width) / 2)
   local win = vim.api.nvim_open_win(buf, true, {
     relative = "editor",
     style = "minimal",
@@ -34,8 +23,8 @@ function M.open(opts)
     footer = " Enter save · Shift+Enter newline · @ file · / command · Esc cancel ",
     width = width,
     height = height,
-    row = row,
-    col = col,
+    row = math.floor((vim.o.lines - height) / 2),
+    col = math.floor((vim.o.columns - width) / 2),
   })
 
   local function force_close()
@@ -47,45 +36,19 @@ function M.open(opts)
     end
   end
 
-  local function close()
-    local text = vim.trim(table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n"))
-    if text ~= "" then
-      -- Drafts should only close after they are submitted or explicitly cleared.
-      vim.notify("Input is not empty. Submit or clear it before closing.", vim.log.levels.WARN)
-      return
-    end
-
-    force_close()
-  end
-
-  local function save()
-    local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-    local text = vim.trim(table.concat(lines, "\n"))
-    force_close()
-    opts.on_save(text)
-  end
-
-  vim.keymap.set({ "n", "i" }, "<CR>", save, { buffer = buf, silent = true })
-  vim.keymap.set("i", "<S-CR>", "<CR>", { buffer = buf, silent = true })
-  vim.keymap.set("n", "<S-CR>", "o", { buffer = buf, silent = true })
-  vim.keymap.set({ "n", "i" }, "<C-s>", save, { buffer = buf, silent = true })
   utils.map_file_reference(buf, win, opts.repo_files)
   utils.map_slash_commands(buf, win, opts.slash_commands, function(command)
-    if command ~= "/run-hooks" then
+    local handler = opts.commands[command]
+    if not handler then
+      -- Saved and other commands are inserted as text for FaltooBot to expand.
       return false
     end
 
     force_close()
-    opts.on_run_hooks()
+    handler()
     return true
   end)
-  vim.keymap.set("n", "q", close, { buffer = buf, silent = true })
-  vim.keymap.set("n", "<Esc>", close, { buffer = buf, silent = true })
-  if #initial_lines > 0 then
-    local last_line = initial_lines[#initial_lines] or ""
-    vim.api.nvim_win_set_cursor(win, { #initial_lines, #last_line })
-  end
-  vim.cmd("startinsert!")
+  utils.map_textarea(buf, win, force_close, opts.on_save)
 end
 
 return M

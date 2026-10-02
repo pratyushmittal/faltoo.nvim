@@ -9,6 +9,7 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from faltoobot.faltoochat.git import get_unstaged_files, is_git_workspace
 from faltoobot.faltoochat.logging_config import configure_logging
@@ -74,6 +75,16 @@ def _print_json(payload: dict[str, Any]) -> None:
 def messages_path(workspace: Path) -> int:
     session = _session(workspace)
     print(session.messages_path)
+    return 0
+
+
+def reset(workspace: Path) -> int:
+    # A fresh session id becomes the workspace's last-used session.
+    workspace = workspace.expanduser().resolve()
+    get_session(
+        get_dir_chat_key(workspace), session_id=str(uuid4()), workspace=workspace
+    )
+    print("Started a fresh Faltoo session.")
     return 0
 
 
@@ -144,11 +155,14 @@ BUILTIN_SLASH_COMMANDS = {
 }
 
 
+def _slash_command_store() -> SlashCommandStore:
+    # Saved commands cannot shadow built-in commands.
+    return SlashCommandStore(excluded_commands=frozenset(BUILTIN_SLASH_COMMANDS))
+
+
 def slash_commands() -> int:
     commands = dict(BUILTIN_SLASH_COMMANDS)
-    saved_commands = SlashCommandStore(
-        excluded_commands=BUILTIN_SLASH_COMMANDS
-    ).commands()
+    saved_commands = _slash_command_store().commands()
     for command, prompt in saved_commands.items():
         commands[command] = prompt.preview
     payload = [
@@ -161,9 +175,7 @@ def slash_commands() -> int:
 
 def _expand_slash_command(text: str) -> str:
     command, _separator, args_text = text.strip().partition(" ")
-    message = SlashCommandStore(
-        excluded_commands=BUILTIN_SLASH_COMMANDS
-    ).get_prompt_message(command, args_text)  # ty: ignore[unresolved-attribute]
+    message = _slash_command_store().get_prompt_message(command, args_text)
     return message if message is not None else text
 
 
@@ -289,7 +301,8 @@ async def _handle_server_request(request: dict[str, Any]) -> None:
             # Invalid JSON input should fail as an empty command payload.
             payload = {}
         await _run_server_command(str(args[0]), payload, emit)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
+        # Any failure must reach Neovim as a JSON error; crashing would kill the warm server.
         _print_json({"id": request_id, "done": True, "ok": False, "error": str(exc)})
         return
 
@@ -335,6 +348,9 @@ def main() -> int:
     messages_path_parser = sub.add_parser("messages-path")
     messages_path_parser.add_argument("--workspace", default=str(Path.cwd()))
 
+    reset_parser = sub.add_parser("reset")
+    reset_parser.add_argument("--workspace", default=str(Path.cwd()))
+
     unstaged_parser = sub.add_parser("unstaged-files")
     unstaged_parser.add_argument("--workspace", default=str(Path.cwd()))
 
@@ -346,6 +362,8 @@ def main() -> int:
         return messages(Path(args.workspace), args.limit)
     if args.command == "messages-path":
         return messages_path(Path(args.workspace))
+    if args.command == "reset":
+        return reset(Path(args.workspace))
     if args.command == "unstaged-files":
         return unstaged_files(Path(args.workspace))
     if args.command == "slash-commands":

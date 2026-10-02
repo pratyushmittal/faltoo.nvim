@@ -53,7 +53,9 @@ Review commands:
 - `:Faltoo submit` submits a saved Ask AI question if one exists; otherwise it submits prepared review comments and reloads review buffers from disk.
 - `:Faltoo history` opens a readable message-history modal at the latest message. If the assistant is answering, the modal shows the live assistant/tool stream as the latest message.
 - `:Faltoo ask` opens a textarea modal to ask AI.
+- `:Faltoo reset` starts a fresh FaltooBot session for the workspace.
 - `:Faltoo open-unstaged` opens current unstaged git files as buffers and closes saved normal buffers outside that set.
+- `:Faltoo next-comment` / `:Faltoo prev-comment` jump between pending comments in the current buffer.
 
 Default review-mode keybindings:
 
@@ -90,7 +92,7 @@ Ask modal keybindings:
 - `<Enter>` saves the question and closes the modal.
 - `<S-CR>` inserts a newline.
 - `@` opens a repository file picker and inserts `` `relative/path` ``. It uses Telescope when available, otherwise `vim.ui.select`.
-- Leading `/` opens built-in and saved FaltooBot slash commands. `/run-hooks` asks which Git changes to check.
+- Leading `/` opens built-in and saved FaltooBot slash commands. `/run-hooks` asks which Git changes to check; `/reset` starts a fresh session.
 - `<C-s>` also saves the question.
 - Normal-mode `<Esc>` or `q` cancels.
 
@@ -100,7 +102,7 @@ Message-history modal keybindings:
 
 - `p` or `[` jumps to the previous message.
 - `n` or `]` jumps to the next message.
-- `r` opens Ask Faltoo for a follow-up.
+- `r` opens Ask Faltoo for a follow-up. In visual mode it quotes the selection, appending to any saved question.
 - `<Esc>` or `q` closes the modal.
 
 ## Statusline and Indicators

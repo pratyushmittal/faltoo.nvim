@@ -276,6 +276,31 @@ function M.run(args)
   return result.stdout or ""
 end
 
+-- Run a bridge command and return one table field from its JSON output.
+---@param args string[]
+---@param field string
+---@return table|nil
+function M.json(args, field)
+  local output = M.run(args)
+  if not output then
+    -- M.run already reported the bridge error.
+    return nil
+  end
+
+  local ok, payload = pcall(vim.json.decode, output)
+  if ok and type(payload) == "table" and payload.error then
+    -- Expected failures, like running outside git, are reported as JSON.
+    vim.notify(tostring(payload.error), vim.log.levels.WARN)
+    return nil
+  end
+  if not ok or type(payload) ~= "table" or type(payload[field]) ~= "table" then
+    -- Bad bridge output would break callers that iterate this field.
+    vim.notify("Faltoo " .. args[1] .. " output was invalid", vim.log.levels.ERROR)
+    return nil
+  end
+  return payload[field]
+end
+
 function M.prewarm(workspace)
   local input = vim.json.encode({ workspace = workspace })
   send_server_request({ "prewarm" }, input, function() end, function() end)

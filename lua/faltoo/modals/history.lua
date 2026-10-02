@@ -1,4 +1,5 @@
 local bridge_api = require("faltoo.bridge")
+local utils = require("faltoo.modals.utils")
 
 local M = {}
 
@@ -12,20 +13,7 @@ local state = {
 }
 
 local function load_messages()
-  local output = bridge_api.run({ "messages", "--workspace", vim.fn.getcwd(), "--limit", "100" })
-  if not output then
-    -- The bridge already reports errors, so skip opening an empty modal.
-    return nil
-  end
-
-  local ok, payload = pcall(vim.json.decode, output)
-  if not ok or type(payload) ~= "table" or type(payload.messages) ~= "table" then
-    -- Bad bridge output would make navigation fail, so surface a clear error.
-    vim.notify("Faltoo history output was invalid", vim.log.levels.ERROR)
-    return nil
-  end
-
-  return payload.messages
+  return bridge_api.json({ "messages", "--workspace", vim.fn.getcwd(), "--limit", "100" }, "messages")
 end
 
 -- Format one history item for the modal buffer.
@@ -222,58 +210,19 @@ function M.update_stream(event)
   update_view()
 end
 
--- Return the current visual selection from the rendered history buffer.
----@param buf integer
----@return string
-local function selected_text(buf)
-  local start_pos = vim.fn.getpos("'<")
-  local end_pos = vim.fn.getpos("'>")
-  local start_buf = tonumber(start_pos[1] or 0) or 0
-  local end_buf = tonumber(end_pos[1] or 0) or 0
-  local start_line = tonumber(start_pos[2] or 0) or 0
-  local end_line = tonumber(end_pos[2] or 0) or 0
-  local start_col = tonumber(start_pos[3] or 1) or 1
-  local end_col = tonumber(end_pos[3] or 1) or 1
-
-  if start_line == 0 or end_line == 0 then
-    -- Normal-mode reply has no active visual selection to pass forward.
-    return ""
-  end
-
-  if (start_buf ~= 0 and start_buf ~= buf) or (end_buf ~= 0 and end_buf ~= buf) then
-    -- Stale visual marks can belong to a buffer that is not the history modal.
-    return ""
-  end
-
-  if start_line > end_line or (start_line == end_line and start_col > end_col) then
-    start_line, end_line = end_line, start_line
-    start_col, end_col = end_col, start_col
-  end
-
-  local buffer_lines = vim.api.nvim_buf_get_lines(buf, start_line - 1, end_line, false)
-  if buffer_lines[1] == nil then
-    -- Visual marks can point past the rendered history after updates.
-    return ""
-  end
-
-  local first_line = buffer_lines[1] or ""
-  local last_line = buffer_lines[#buffer_lines] or ""
-  start_col = math.min(math.max(start_col - 1, 0), #first_line)
-  end_col = math.min(math.max(end_col, 0), #last_line)
-
-  local ok, lines = pcall(vim.api.nvim_buf_get_text, buf, start_line - 1, start_col, end_line - 1, end_col, {})
-  if not ok then
-    -- Visual marks can point outside the history buffer after rerendering.
-    return ""
-  end
-
-  return vim.trim(table.concat(lines, "\n"))
-end
-
+-- Return the last visual selection in the history buffer as a quote.
 ---@param buf integer
 ---@return string|nil
 local function quoted_selection(buf)
-  local text = selected_text(buf)
+  local start_pos = vim.fn.getpos("'<")
+  if start_pos[1] ~= 0 and start_pos[1] ~= buf then
+    -- Stale visual marks can belong to a buffer that is not the history modal.
+    return nil
+  end
+
+  -- Normal reply clears the marks, which makes getregion() fail.
+  local ok, lines = pcall(vim.fn.getregion, start_pos, vim.fn.getpos("'>"), { type = vim.fn.visualmode() })
+  local text = ok and vim.trim(table.concat(lines, "\n")) or ""
   if text == "" then
     return nil
   end
@@ -284,11 +233,7 @@ local function open_window()
   local messages = messages_with_stream()
   -- Used if Telescope/other pickers open a file while history has focus.
   local return_win = vim.api.nvim_get_current_win()
-  local buf = vim.api.nvim_create_buf(false, true)
-  vim.bo[buf].buftype = "nofile"
-  vim.bo[buf].bufhidden = "wipe"
-  vim.bo[buf].filetype = "markdown"
-
+  local buf = utils.scratch_buf()
   local width = math.max(60, math.floor(vim.o.columns * 0.85))
   local height = math.max(12, math.floor(vim.o.lines * 0.75))
   local win = vim.api.nvim_open_win(buf, true, {

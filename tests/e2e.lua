@@ -176,6 +176,25 @@ if vim.api.nvim_get_current_buf() ~= history_buf then
   error("Ask reply did not return focus to history")
 end
 
+-- Selecting again should append another quote to the saved question.
+vim.api.nvim_win_set_cursor(0, { 3, 0 })
+vim.api.nvim_feedkeys(visual_reply, "xt", false)
+ask_buf = vim.api.nvim_get_current_buf()
+helpers.contains(helpers.buffer_text(ask_buf), 'follow up\n\n"""\nreview answer\n"""')
+
+-- A slash in the middle of a draft should keep the cursor where it was typed.
+vim.api.nvim_buf_set_lines(ask_buf, 0, -1, false, { "follow up" })
+vim.cmd("startinsert")
+vim.api.nvim_win_set_cursor(0, { 1, 3 })
+helpers.press(ask_buf, "i", "/")
+vim.wait(50)
+local slash_cursor = vim.api.nvim_win_get_cursor(0)
+if helpers.buffer_text(ask_buf) ~= "fol/low up" or slash_cursor[2] ~= 4 then
+  error("Slash moved the cursor: " .. helpers.buffer_text(ask_buf) .. " @ " .. slash_cursor[2])
+end
+vim.api.nvim_buf_set_lines(ask_buf, 0, -1, false, { "follow up" })
+helpers.press(ask_buf, "i", "<CR>")
+
 helpers.press(history_buf, "n", "<S-CR>")
 if not fake_bridge.active_stream then
   error("Ask submit did not start a stream")
@@ -274,6 +293,12 @@ history_buf = vim.api.nvim_get_current_buf()
 fake_bridge.unstaged_files = {}
 helpers.press(history_buf, "n", "R")
 helpers.contains(helpers.buffer_text(vim.api.nvim_get_current_buf()), "assistant answer")
+
+-- Reset should start a fresh session and refresh open history.
+vim.cmd("Faltoo reset")
+if #fake_bridge.messages ~= 0 then
+  error("Reset did not start a fresh session")
+end
 
 faltoo.off()
 vim.fn.delete(tmp, "rf")
