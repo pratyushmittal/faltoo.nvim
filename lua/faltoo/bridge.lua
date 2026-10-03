@@ -301,6 +301,14 @@ function M.json(args, field)
   return payload[field]
 end
 
+-- Route bridge calls to the Claude Code CLI instead of the FaltooBot Python bridge.
+---@param permission_mode? string `claude --permission-mode` value
+function M.use_claude(permission_mode)
+  local claude = require("faltoo.claude")
+  claude.permission_mode = permission_mode or claude.permission_mode
+  M.run, M.stream, M.prewarm = claude.run, claude.stream, claude.prewarm
+end
+
 function M.prewarm(workspace)
   local input = vim.json.encode({ workspace = workspace })
   send_server_request({ "prewarm" }, input, function() end, function() end)

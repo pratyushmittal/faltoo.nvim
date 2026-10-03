@@ -6,9 +6,37 @@ A small Neovim proof-of-concept for running FaltooBot review sessions directly i
 
 - Neovim 0.10+
   - Neovim 0.12+ if you want to use built-in `vim.pack`
-- `faltoobot` installed, configured, and available on `$PATH`
+- One agent backend:
+  - `faltoobot` installed, configured, and available on `$PATH` (default). Install it however you prefer, such as `uv`, `pipx`, or `brew`.
+  - Or the [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI `claude` on `$PATH`, logged in with your Claude subscription or an API key.
 
-Install `faltoobot` however you prefer, such as `uv`, `pipx`, or `brew`.
+### Claude Code backend
+
+```lua
+require("faltoo").setup({ backend = "claude" })
+```
+
+Prompts go to `claude -p --continue`, so each submit continues the most recent Claude conversation in the current directory, including one you started in a terminal. History reads the newest session file in `~/.claude/projects/` (or `$CLAUDE_CONFIG_DIR`). `/reset` makes the next submit start a new conversation. FaltooBot-only commands like `/run-hooks` are not available.
+
+#### Permissions
+
+`claude -p` cannot ask for approval, so Faltoo runs it with `--permission-mode bypassPermissions` by default: Claude can edit files and run any command, like committing, without asking. Pick a stricter [permission mode](https://docs.anthropic.com/en/docs/claude-code/iam#permission-modes) with `permission_mode`:
+
+```lua
+require("faltoo").setup({ backend = "claude", permission_mode = "acceptEdits" })
+```
+
+With `acceptEdits`, edits are auto-accepted but commands not allowed in your Claude settings are denied. Allow the commands you trust in `.claude/settings.json` in your project, or in `~/.claude/settings.json` for all projects:
+
+```json
+{
+  "permissions": {
+    "allow": ["Bash(git status:*)", "Bash(git diff:*)", "Bash(git commit:*)", "Bash(git push:*)"]
+  }
+}
+```
+
+`Bash(git commit:*)` allows any command starting with `git commit`. Run `/permissions` inside an interactive `claude` session to review or edit the rules.
 
 ## Setup
 
@@ -128,8 +156,9 @@ brew install pre-commit lua-language-server uv
 pre-commit install
 pre-commit run --all-files
 nvim --headless -u NONE -c "set rtp^=." -S tests/e2e.lua
+nvim --headless -u NONE -c "set rtp^=." -S tests/claude_e2e.lua
 ```
 
-The LuaLS hook falls back to Mason's `~/.local/share/nvim/mason/bin/lua-language-server` when it is not on `$PATH`. Ruff and ty run through `uvx`. The headless E2E test is also wired into pre-commit.
+The LuaLS hook falls back to Mason's `~/.local/share/nvim/mason/bin/lua-language-server` when it is not on `$PATH`. Ruff and ty run through `uvx`. Both headless E2E tests are also wired into pre-commit.
 
 This is intentionally minimal. The plugin stores pending comments in Lua memory and uses `python/faltoo_bridge.py` to read/write FaltooBot sessions through `faltoobot.sessions`.

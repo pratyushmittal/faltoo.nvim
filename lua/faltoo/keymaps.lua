@@ -29,9 +29,6 @@ local global_names = { "history", "ask" }
 ---@field lhs string
 ---@field modes? string|string[]
 
----@class FaltooSetupOpts
----@field mappings? table<string, FaltooMapping|string|false>|false
-
 local state = {
   mappings = vim.deepcopy(default_mappings),
   mapped = {}, -- buffer -> list of { mode, lhs } set by map_buffer

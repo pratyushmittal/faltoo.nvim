@@ -10,6 +10,11 @@ function M.install(repo)
     hook_scope = nil,
   }
 
+  -- The test workspace is not a real git repo, so unstaged files come from state.
+  require("faltoo.git").unstaged_files = function()
+    return state.unstaged_files
+  end
+
   -- Replace Python bridge calls so the E2E flow stays fast and deterministic.
   local bridge = require("faltoo.bridge")
   bridge.run = function(args)
@@ -20,9 +25,6 @@ function M.install(repo)
       return vim.json.encode({
         commands = { { command = "/run-hooks", preview = "run hooks for git changes" } },
       })
-    end
-    if args[1] == "unstaged-files" then
-      return vim.json.encode({ ok = true, files = state.unstaged_files })
     end
     if args[1] == "reset" then
       state.messages = {}

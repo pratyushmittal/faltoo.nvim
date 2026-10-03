@@ -30,6 +30,14 @@ repos:
         pass_filenames: false
         files: ^(lua|plugin|python|tests|README\.md|\.pre-commit-config\.yaml)
 
+      - id: faltoo-claude-e2e
+        name: faltoo claude e2e
+        entry: nvim
+        args: [--headless, -u, NONE, -c, "set rtp^=.", -S, tests/claude_e2e.lua, -c, cquit]
+        language: system
+        pass_filenames: false
+        files: ^(lua|plugin|tests|\.pre-commit-config\.yaml)
+
       - id: ruff-check
         name: ruff check fix
         entry: uvx ruff check --fix
@@ -44,6 +52,7 @@ repos:
 
       - id: ty-check
         name: ty check
-        entry: uvx --with faltoobot ty check --no-progress
+        # An active conda env or virtualenv would make ty search there instead of uvx's env.
+        entry: env -u CONDA_PREFIX -u VIRTUAL_ENV uvx --with faltoobot ty check --no-progress
         language: system
         files: ^python/faltoo_bridge\.py$

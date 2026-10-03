@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from faltoobot.faltoochat.git import get_unstaged_files, is_git_workspace
 from faltoobot.faltoochat.logging_config import configure_logging
 from faltoobot.faltoochat.review_api import Review, reviews_prompt
 from faltoobot.faltoochat.slash_commands import SlashCommandStore
@@ -85,23 +84,6 @@ def reset(workspace: Path) -> int:
         get_dir_chat_key(workspace), session_id=str(uuid4()), workspace=workspace
     )
     print("Started a fresh Faltoo session.")
-    return 0
-
-
-def unstaged_files(workspace: Path) -> int:
-    workspace = workspace.expanduser().resolve()
-    if not is_git_workspace(workspace):
-        _print_json({"ok": False, "error": "Not inside a git repository"})
-        return 0
-
-    files = []
-    for path in get_unstaged_files(workspace):
-        full_path = workspace / path
-        if full_path.is_file():
-            # Deleted files can appear in git diff but cannot be opened as buffers.
-            files.append(str(full_path.resolve()))
-
-    _print_json({"ok": True, "files": files})
     return 0
 
 
@@ -351,9 +333,6 @@ def main() -> int:
     reset_parser = sub.add_parser("reset")
     reset_parser.add_argument("--workspace", default=str(Path.cwd()))
 
-    unstaged_parser = sub.add_parser("unstaged-files")
-    unstaged_parser.add_argument("--workspace", default=str(Path.cwd()))
-
     sub.add_parser("slash-commands")
     sub.add_parser("server")
 
@@ -364,8 +343,6 @@ def main() -> int:
         return messages_path(Path(args.workspace))
     if args.command == "reset":
         return reset(Path(args.workspace))
-    if args.command == "unstaged-files":
-        return unstaged_files(Path(args.workspace))
     if args.command == "slash-commands":
         return slash_commands()
     if args.command == "server":

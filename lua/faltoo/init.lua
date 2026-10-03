@@ -400,7 +400,7 @@ end
 -- Map canonical paths to the paths we should open in Neovim.
 ---@return table<string, string>|nil
 local function unstaged_file_map()
-  local files = bridge_api.json({ "unstaged-files", "--workspace", workspace() }, "files")
+  local files = git_api.unstaged_files()
   if not files then
     -- Opening/closing buffers from a failed git lookup could close the wrong files.
     return nil
@@ -655,9 +655,18 @@ function M.status()
   return "Faltoo: " .. table.concat(parts, " · ")
 end
 
+---@class FaltooSetupOpts
+---@field mappings? table<string, FaltooMapping|string|false>|false
+---@field backend? "faltoobot"|"claude" which agent receives prompts; defaults to faltoobot
+---@field permission_mode? string Claude backend `--permission-mode`; defaults to bypassPermissions
+
 ---@param opts? FaltooSetupOpts
 function M.setup(opts)
   keymaps_api.setup(opts)
+  if opts and opts.backend == "claude" then
+    -- Without this option prompts keep going to the FaltooBot Python bridge.
+    bridge_api.use_claude(opts.permission_mode)
+  end
 
   comments_api.setup(redraw_faltoo_status)
 
