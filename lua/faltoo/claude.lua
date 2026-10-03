@@ -120,6 +120,20 @@ local function handle_line(line, on_event)
   end
 end
 
+-- FaltooBot Python bridge `run`, set by bridge.use_claude(), for saved prompts.
+---@type fun(args: string[]): string|nil
+M.faltoobot_run = nil
+
+---@param args string[]
+---@return string|nil
+local function faltoobot(args)
+  if not M.faltoobot_run or vim.fn.executable("faltoobot") ~= 1 then
+    -- Saved prompts are optional; the Claude backend works without faltoobot.
+    return nil
+  end
+  return M.faltoobot_run(args)
+end
+
 ---@param args string[]
 ---@return string|nil
 function M.run(args)
@@ -135,7 +149,10 @@ function M.run(args)
     return "Started a fresh Claude session."
   end
   if command == "slash-commands" then
-    return vim.json.encode({ commands = { { command = "/reset", preview = "start a fresh session" } } })
+    local commands = { { command = "/reset", preview = "start a fresh session" } }
+    local ok, saved = pcall(vim.json.decode, faltoobot({ "slash-commands", "--saved-only" }) or "{}")
+    vim.list_extend(commands, ok and saved.commands or {})
+    return vim.json.encode({ commands = commands })
   end
   vim.notify("Faltoo Claude backend does not support " .. tostring(command), vim.log.levels.ERROR)
   return nil
@@ -157,6 +174,10 @@ function M.stream(args, input, on_event, on_done)
 
   local payload = vim.json.decode(input)
   local prompt = args[1] == "append-review" and review_prompt(payload.comments) or payload.text
+  if vim.startswith(prompt, "/") then
+    -- Expand FaltooBot saved prompts; other commands pass through for Claude to handle.
+    prompt = faltoobot({ "expand-slash-command", prompt }) or prompt
+  end
   local cmd = { "claude", "-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages" }
   vim.list_extend(cmd, { "--permission-mode", M.permission_mode })
   if not is_fresh then

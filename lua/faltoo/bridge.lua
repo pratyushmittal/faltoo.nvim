@@ -260,9 +260,10 @@ local function ping_bridge(on_done)
   end, PING_TIMEOUT_MS)
 end
 
+-- Local so use_claude() can still reach the Python bridge after replacing M.run.
 ---@param args string[]
 ---@return string|nil
-function M.run(args)
+local function run(args)
   local command = cmd(args)
   if not command then
     return nil
@@ -275,6 +276,7 @@ function M.run(args)
   end
   return result.stdout or ""
 end
+M.run = run
 
 -- Run a bridge command and return one table field from its JSON output.
 ---@param args string[]
@@ -306,6 +308,8 @@ end
 function M.use_claude(permission_mode)
   local claude = require("faltoo.claude")
   claude.permission_mode = permission_mode or claude.permission_mode
+  -- Claude uses the Python bridge only for FaltooBot saved prompts.
+  claude.faltoobot_run = run
   M.run, M.stream, M.prewarm = claude.run, claude.stream, claude.prewarm
 end
 

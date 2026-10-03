@@ -142,8 +142,9 @@ def _slash_command_store() -> SlashCommandStore:
     return SlashCommandStore(excluded_commands=frozenset(BUILTIN_SLASH_COMMANDS))
 
 
-def slash_commands() -> int:
-    commands = dict(BUILTIN_SLASH_COMMANDS)
+def slash_commands(saved_only: bool) -> int:
+    # Other agents, like Claude, can only use saved prompts, not FaltooBot built-ins.
+    commands = {} if saved_only else dict(BUILTIN_SLASH_COMMANDS)
     saved_commands = _slash_command_store().commands()
     for command, prompt in saved_commands.items():
         commands[command] = prompt.preview
@@ -159,6 +160,12 @@ def _expand_slash_command(text: str) -> str:
     command, _separator, args_text = text.strip().partition(" ")
     message = _slash_command_store().get_prompt_message(command, args_text)
     return message if message is not None else text
+
+
+def expand_slash_command(text: str) -> int:
+    # No trailing newline: the output is sent to the agent as the exact prompt.
+    sys.stdout.write(_expand_slash_command(text))
+    return 0
 
 
 # Streaming code emits small updates; the server maps them to JSON lines for Neovim.
@@ -333,7 +340,12 @@ def main() -> int:
     reset_parser = sub.add_parser("reset")
     reset_parser.add_argument("--workspace", default=str(Path.cwd()))
 
-    sub.add_parser("slash-commands")
+    slash_parser = sub.add_parser("slash-commands")
+    slash_parser.add_argument("--saved-only", action="store_true")
+
+    expand_parser = sub.add_parser("expand-slash-command")
+    expand_parser.add_argument("text")
+
     sub.add_parser("server")
 
     args = parser.parse_args()
@@ -344,7 +356,9 @@ def main() -> int:
     if args.command == "reset":
         return reset(Path(args.workspace))
     if args.command == "slash-commands":
-        return slash_commands()
+        return slash_commands(args.saved_only)
+    if args.command == "expand-slash-command":
+        return expand_slash_command(args.text)
     if args.command == "server":
         return asyncio.run(server())
     return 1

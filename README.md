@@ -16,7 +16,7 @@ A small Neovim proof-of-concept for running FaltooBot review sessions directly i
 require("faltoo").setup({ backend = "claude" })
 ```
 
-Prompts go to `claude -p --continue`, so each submit continues the most recent Claude conversation in the current directory, including one you started in a terminal. History reads the newest session file in `~/.claude/projects/` (or `$CLAUDE_CONFIG_DIR`). `/reset` makes the next submit start a new conversation. FaltooBot-only commands like `/run-hooks` are not available.
+Each submit continues your most recent Claude conversation in the current directory. `/reset` starts a new one. If `faltoobot` is also installed, its saved prompts work too.
 
 #### Permissions
 

@@ -50,6 +50,12 @@ vim.fn.writefile({
 local faltoo = require("faltoo")
 faltoo.setup({ backend = "claude" })
 
+-- A repeated setup (e.g. re-sourced config) must keep saved prompts on the Python bridge.
+faltoo.setup({ backend = "claude" })
+if require("faltoo.claude").faltoobot_run == require("faltoo.bridge").run then
+  error("Repeated setup pointed saved prompts back at the Claude backend")
+end
+
 -- Record converted stream events; the history modal clears them when a stream ends.
 local events = {}
 local bridge = require("faltoo.bridge")
@@ -118,6 +124,24 @@ helpers.contains(log_text, "new topic")
 if log_text:find("--continue", 1, true) then
   error("Submit after reset still used --continue")
 end
+
+-- With faltoobot installed, its saved prompts are listed and expanded before submit.
+vim.fn.writefile({ "#!/bin/sh" }, bin .. "/faltoobot")
+vim.fn.setfperm(bin .. "/faltoobot", "rwxr-xr-x")
+require("faltoo.claude").faltoobot_run = function(args)
+  if args[1] == "slash-commands" then
+    return vim.json.encode({ commands = { { command = "/greet", preview = "Say hello to $1" } } })
+  end
+  return "Say hello to " .. args[2]:match("^/greet (.*)")
+end
+helpers.contains(bridge.run({ "slash-commands" }), "/greet")
+vim.fn.delete(log)
+vim.cmd("Faltoo ask")
+vim.api.nvim_buf_set_lines(0, 0, -1, false, { "/greet Bob" })
+helpers.press(vim.api.nvim_get_current_buf(), "i", "<CR>")
+vim.cmd("Faltoo submit")
+wait_for_answer()
+helpers.contains(table.concat(vim.fn.readfile(log), "\n"), "Say hello to Bob")
 
 faltoo.off()
 vim.fn.delete(tmp, "rf")
