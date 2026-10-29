@@ -45,6 +45,12 @@ vim.fn.writefile({
     type = "assistant",
     message = { role = "assistant", content = { { type = "text", text = "earlier answer" } } },
   }),
+  vim.json.encode({ type = "user", message = { role = "user", content = "/code-review" } }),
+  vim.json.encode({
+    type = "system",
+    subtype = "local_command",
+    content = "<local-command-stdout>2 findings</local-command-stdout>",
+  }),
 }, project_dir .. "/s1.jsonl")
 
 local faltoo = require("faltoo")
@@ -100,11 +106,10 @@ if faltoo.status():find("comment", 1, true) then
   error("Submitted comments were not cleared: " .. faltoo.status())
 end
 
--- History should show readable session messages and skip tool results.
+-- History should show messages and local command output, skipping tool results.
 vim.cmd("Faltoo history")
 local history_text = helpers.buffer_text(vim.api.nvim_get_current_buf())
-helpers.contains(history_text, "earlier answer")
-helpers.contains(history_text, "(2/2)")
+helpers.contains(history_text, "# assistant (4/4)\n\n2 findings")
 vim.cmd("close")
 
 -- Reset should hide the old session and start the next submit without --continue.

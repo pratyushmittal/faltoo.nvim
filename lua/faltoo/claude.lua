@@ -46,7 +46,13 @@ local function messages()
   local items = {}
   for _, line in ipairs(path and vim.fn.readfile(path) or {}) do
     local ok, entry = pcall(vim.json.decode, line, { luanil = { object = true, array = true } })
-    local message = ok and type(entry) == "table" and not entry.isMeta and entry.message or {}
+    entry = ok and type(entry) == "table" and entry or {}
+    local message = not entry.isMeta and entry.message or {}
+    if entry.subtype == "local_command" then
+      -- Commands like /code-review save their output as a tagged system entry, not a message.
+      local output = tostring(entry.content or ""):gsub("</?local%-command%-%a+>", "")
+      message = { role = "assistant", content = vim.trim(output) }
+    end
     local text = content_text(message.content)
     if text ~= "" then
       table.insert(items, { role = message.role, text = text })
