@@ -82,6 +82,7 @@ Review commands:
 - `:Faltoo history` opens a readable message-history modal at the latest message. If the assistant is answering, the modal shows the live assistant/tool stream as the latest message.
 - `:Faltoo ask` opens a textarea modal to ask AI.
 - `:Faltoo reset` starts a fresh FaltooBot session for the workspace.
+- `:Faltoo stop` stops a running answer, e.g. when the agent waits on a background job. Comments and questions you added after submitting stay.
 - `:Faltoo open-unstaged` opens current unstaged git files as buffers and closes saved normal buffers outside that set.
 - `:Faltoo next-comment` / `:Faltoo prev-comment` jump between pending comments in the current buffer.
 

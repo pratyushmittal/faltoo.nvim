@@ -374,6 +374,18 @@ local function reset_session()
   vim.notify("Started a fresh Faltoo session")
 end
 
+-- Stuck requests, e.g. Claude waiting on a background job, otherwise block follow-ups.
+local function stop_request()
+  if not state.submitting then
+    -- Nothing to stop; avoid killing a warm FaltooBot bridge for no reason.
+    vim.notify("No Faltoo request is running")
+    return
+  end
+  vim.notify("Stopping Faltoo request...")
+  -- The killed job fails its request, which clears the answering state.
+  bridge_api.stop()
+end
+
 local function slash_commands()
   -- Bridge errors are already reported; keep completion empty then.
   return bridge_api.json({ "slash-commands" }, "commands") or {}
@@ -487,6 +499,7 @@ local actions = {
   end,
   history = history_modal.open,
   reset = reset_session,
+  stop = stop_request,
   submit = submit_pending_request,
   open_unstaged = refresh_unstaged_git_buffers,
   next_comment = function()

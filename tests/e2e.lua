@@ -1,3 +1,4 @@
+---@diagnostic disable: duplicate-set-field -- the test stubs pickers and git lookups
 -- Headless UI flow test; the bridge is faked so it runs without FaltooBot.
 local repo = vim.fn.getcwd()
 vim.opt.runtimepath:prepend(repo)
@@ -299,6 +300,33 @@ vim.cmd("Faltoo reset")
 if #fake_bridge.messages ~= 0 then
   error("Reset did not start a fresh session")
 end
+
+-- A file picked after `@` should land where `@` was typed, after the space.
+local git = require("faltoo.git")
+local repo_files, select = git.repo_files, vim.ui.select
+git.repo_files = function()
+  return { "sample.txt" }
+end
+vim.ui.select = function(items, _, on_choice)
+  -- Like Telescope, focus another window so the textarea leaves insert mode.
+  local picker_buf = vim.api.nvim_create_buf(false, true)
+  local picker =
+    vim.api.nvim_open_win(picker_buf, true, { relative = "editor", row = 0, col = 0, width = 1, height = 1 })
+  vim.schedule(function()
+    vim.api.nvim_win_close(picker, true)
+    on_choice(items[1])
+  end)
+end
+vim.cmd("Faltoo ask")
+ask_buf = vim.api.nvim_get_current_buf()
+vim.api.nvim_feedkeys("Asee @", "xt", false)
+vim.wait(100)
+git.repo_files, vim.ui.select = repo_files, select
+if helpers.buffer_text(ask_buf) ~= "see `sample.txt`" then
+  error("File reference lost its leading space: " .. helpers.buffer_text(ask_buf))
+end
+vim.api.nvim_buf_set_lines(ask_buf, 0, -1, false, {})
+helpers.press(ask_buf, "n", "q")
 
 faltoo.off()
 vim.fn.delete(tmp, "rf")

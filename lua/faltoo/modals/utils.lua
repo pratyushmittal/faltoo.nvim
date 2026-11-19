@@ -67,7 +67,10 @@ function M.map_textarea(buf, win, force_close, on_submit)
   vim.cmd("startinsert!")
 end
 
-function M.insert_text_at_window(win, buf, text)
+-- Pickers return in normal mode, which moves the cursor back one character,
+-- so callers pass the cursor saved when their key was pressed.
+---@param pos integer[]
+function M.insert_text_at_window(win, buf, text, pos)
   if not vim.api.nvim_buf_is_valid(buf) or not vim.api.nvim_win_is_valid(win) then
     -- The textarea can be closed while an external picker is open.
     return
@@ -79,7 +82,7 @@ function M.insert_text_at_window(win, buf, text)
     return
   end
 
-  local row, col = unpack(vim.api.nvim_win_get_cursor(win))
+  local row, col = unpack(pos)
   vim.api.nvim_buf_set_text(buf, row - 1, col, row - 1, col, { text })
   local cursor = { row, col + #text }
   vim.api.nvim_win_set_cursor(win, cursor)
@@ -161,11 +164,11 @@ end
 ---@param on_command fun(command: string): boolean
 function M.map_slash_commands(buf, win, slash_commands, on_command)
   local function pick_command()
-    local row, col = unpack(vim.api.nvim_win_get_cursor(win))
-    local commands = (row == 1 and col == 0) and slash_commands() or {}
+    local pos = vim.api.nvim_win_get_cursor(win)
+    local commands = (pos[1] == 1 and pos[2] == 0) and slash_commands() or {}
     if #commands == 0 then
       -- Only a leading slash opens completion; elsewhere `/` is plain text.
-      M.insert_text_at_window(win, buf, "/")
+      M.insert_text_at_window(win, buf, "/", pos)
       return
     end
 
@@ -174,7 +177,7 @@ function M.map_slash_commands(buf, win, slash_commands, on_command)
       if name and on_command(name) then
         return
       end
-      M.insert_text_at_window(win, buf, name or "/")
+      M.insert_text_at_window(win, buf, name or "/", pos)
     end)
   end
 
@@ -183,16 +186,17 @@ end
 
 function M.map_file_reference(buf, win, repo_files)
   local function pick_file()
+    local pos = vim.api.nvim_win_get_cursor(win)
     local files = repo_files()
     if #files == 0 then
       -- Empty repositories have nothing useful to insert after @.
       vim.notify("No repository files found", vim.log.levels.WARN)
-      M.insert_text_at_window(win, buf, "@")
+      M.insert_text_at_window(win, buf, "@", pos)
       return
     end
 
     pick(files, "Faltoo file reference", tostring, function(file)
-      M.insert_text_at_window(win, buf, file and ("`" .. file .. "`") or "@")
+      M.insert_text_at_window(win, buf, file and ("`" .. file .. "`") or "@", pos)
     end)
   end
 

@@ -4,6 +4,9 @@ local M = {}
 -- After /reset the next submit starts a new conversation instead of `--continue`.
 local is_fresh = false
 
+---@type integer|nil
+local job = nil -- Running `claude -p` process, kept so :Faltoo stop can kill it.
+
 -- No one can approve tool calls in `-p`, so by default Claude may run anything.
 M.permission_mode = "bypassPermissions"
 
@@ -94,6 +97,20 @@ local function review_prompt(comments)
   return vim.trim(table.concat(lines, "\n"))
 end
 
+---@param input? table
+---@return string
+local function tool_detail(input)
+  input = input or {}
+  -- Most useful input field per tool, e.g. Skill `skill`, Read `file_path`, WebFetch `url`.
+  for _, key in ipairs({ "skill", "file_path", "command", "url", "query", "pattern", "description", "prompt" }) do
+    if type(input[key]) == "string" then
+      return input[key]
+    end
+  end
+  -- Other tools (e.g. MCP) still show their raw input; history clips long lines.
+  return next(input) and vim.json.encode(input) or ""
+end
+
 -- Convert one stream-json line into Faltoo stream events.
 ---@param line string
 ---@param on_event fun(event: table)
@@ -108,20 +125,35 @@ local function handle_line(line, on_event)
   if msg.type == "system" and msg.subtype == "init" then
     -- The session now exists, so later submits can `--continue` it.
     is_fresh = false
-    on_event({ is_new = true, classes = "status", text = "Submitted message. Waiting for assistant..." })
+    local text = "Submitted message. Waiting for " .. tostring(msg.model or "Claude") .. "..."
+    on_event({ is_new = true, classes = "status", text = text })
+  elseif msg.type == "system" and msg.subtype == "status" then
+    on_event({ is_new = true, classes = "status", text = "Claude: " .. tostring(msg.status) })
   elseif delta.type == "text_delta" then
     on_event({ is_new = false, classes = "answer", text = delta.text })
-  elseif msg.type == "assistant" then
-    for _, block in ipairs(msg.message.content or {}) do
+  elseif delta.type == "thinking_delta" then
+    on_event({ is_new = false, classes = "thinking", text = delta.thinking })
+  elseif msg.type == "rate_limit_event" and msg.rate_limit_info.status ~= "allowed" then
+    -- Normal events say "allowed"; anything else means the usage limit is near or hit.
+    on_event({ is_new = true, classes = "rate_limit", text = "Rate limit: " .. tostring(msg.rate_limit_info.status) })
+  elseif type(msg.message) == "table" and type(msg.message.content) == "table" then
+    -- Assistant messages carry tool calls; user messages carry their results.
+    for _, block in ipairs(msg.message.content) do
       if block.type == "tool_use" then
-        local input = block.input or {}
-        local target = input.file_path or input.command or input.pattern or input.description or ""
-        on_event({ is_new = true, classes = "tool", text = block.name .. " " .. target })
+        on_event({ is_new = true, classes = "tool", text = block.name .. " " .. tool_detail(block.input) })
+      elseif block.type == "tool_result" then
+        local first_line = content_text(block.content):match("[^\n]*")
+        on_event({ is_new = true, classes = "tool", text = (block.is_error and "Error: " or "↳ ") .. first_line })
       end
     end
   elseif msg.type == "result" then
     -- Error results like `error_max_turns` carry no result text, only a subtype.
-    local text = msg.is_error and tostring(msg.result or msg.subtype) or "Assistant response saved."
+    local summary = msg.is_error and tostring(msg.result or msg.subtype) or "Assistant response saved."
+    local text = ("%s · %d turns · %.1fs"):format(summary, msg.num_turns or 0, (msg.duration_ms or 0) / 1000)
+    if #(msg.permission_denials or {}) > 0 then
+      -- Stricter permission modes deny tools without asking in `-p`.
+      text = text .. " · " .. #msg.permission_denials .. " permission denials"
+    end
     on_event({ is_new = true, classes = "done", text = text })
   end
 end
@@ -167,6 +199,14 @@ end
 -- Each submit starts its own CLI process, so there is nothing to warm up.
 function M.prewarm() end
 
+-- Kill the running `claude` process and its tool processes; on_exit then reports failure.
+function M.stop()
+  if job then
+    -- Nil when the last process already exited.
+    vim.fn.jobstop(job)
+  end
+end
+
 ---@param args string[] `append-review` or `append-message`
 ---@param input string JSON payload with workspace and comments or text
 ---@param on_event fun(event: table)
@@ -191,7 +231,7 @@ function M.stream(args, input, on_event, on_done)
   end
 
   local pending, stderr = "", {}
-  local job = vim.fn.jobstart(cmd, {
+  job = vim.fn.jobstart(cmd, {
     cwd = payload.workspace,
     on_stdout = function(_, data)
       -- Job output arrives in chunks; keep the unfinished last line for the next chunk.
@@ -205,6 +245,7 @@ function M.stream(args, input, on_event, on_done)
       vim.list_extend(stderr, data)
     end,
     on_exit = function(_, code)
+      job = nil
       local message = vim.trim(table.concat(stderr, "\n"))
       if code ~= 0 and message ~= "" then
         vim.notify(message, vim.log.levels.ERROR)

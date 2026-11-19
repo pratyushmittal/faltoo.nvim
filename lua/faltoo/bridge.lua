@@ -310,8 +310,11 @@ function M.use_claude(permission_mode)
   claude.permission_mode = permission_mode or claude.permission_mode
   -- Claude uses the Python bridge only for FaltooBot saved prompts.
   claude.faltoobot_run = run
-  M.run, M.stream, M.prewarm = claude.run, claude.stream, claude.prewarm
+  M.run, M.stream, M.prewarm, M.stop = claude.run, claude.stream, claude.prewarm, claude.stop
 end
+
+-- Kill the Python bridge; pending requests fail and the next one starts a fresh server.
+M.stop = stop_server
 
 function M.prewarm(workspace)
   local input = vim.json.encode({ workspace = workspace })

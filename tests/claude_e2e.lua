@@ -18,14 +18,24 @@ vim.fn.writefile({
 }, bin .. "/claude")
 vim.fn.setfperm(bin .. "/claude", "rwxr-xr-x")
 vim.fn.writefile({
-  vim.json.encode({ type = "system", subtype = "init" }),
+  vim.json.encode({ type = "system", subtype = "init", model = "claude-test" }),
+  vim.json.encode({ type = "stream_event", event = { delta = { type = "thinking_delta", thinking = "Plan" } } }),
   vim.json.encode({
     type = "assistant",
-    message = { content = { { type = "tool_use", name = "Edit", input = { file_path = "sample.txt" } } } },
+    message = {
+      content = {
+        { type = "tool_use", name = "Skill", input = { skill = "review" } },
+        { type = "tool_use", name = "Edit", input = { file_path = "sample.txt" } },
+      },
+    },
+  }),
+  vim.json.encode({
+    type = "user",
+    message = { content = { { type = "tool_result", is_error = true, content = "No match\nmore" } } },
   }),
   vim.json.encode({ type = "stream_event", event = { delta = { type = "text_delta", text = "Fixed " } } }),
   vim.json.encode({ type = "stream_event", event = { delta = { type = "text_delta", text = "it." } } }),
-  vim.json.encode({ type = "result" }),
+  vim.json.encode({ type = "result", num_turns = 2, duration_ms = 1500, permission_denials = { {} } }),
 }, tmp .. "/stream.jsonl")
 vim.env.PATH = bin .. ":" .. vim.env.PATH
 vim.env.CLAUDE_CONFIG_DIR = tmp .. "/config"
@@ -100,7 +110,16 @@ helpers.contains(log_text, "### Line `1-1`")
 helpers.contains(log_text, "Comment:\nrename this")
 helpers.contains(
   table.concat(events, "\n"),
-  "tool: Edit sample.txt\nanswer: Fixed \nanswer: it.\ndone: Assistant response saved."
+  table.concat({
+    "status: Submitted message. Waiting for claude-test...",
+    "thinking: Plan",
+    "tool: Skill review",
+    "tool: Edit sample.txt",
+    "tool: Error: No match",
+    "answer: Fixed ",
+    "answer: it.",
+    "done: Assistant response saved. · 2 turns · 1.5s · 1 permission denials",
+  }, "\n")
 )
 if faltoo.status():find("comment", 1, true) then
   error("Submitted comments were not cleared: " .. faltoo.status())
@@ -147,6 +166,29 @@ helpers.press(vim.api.nvim_get_current_buf(), "i", "<CR>")
 vim.cmd("Faltoo submit")
 wait_for_answer()
 helpers.contains(table.concat(vim.fn.readfile(log), "\n"), "Say hello to Bob")
+
+-- A hung Claude run (e.g. waiting on a background job) should stop and keep newer drafts.
+local init = vim.json.encode({ type = "system", subtype = "init", model = "claude-test" })
+vim.fn.writefile({ "#!/bin/sh", "echo '" .. init .. "'", "sleep 30" }, bin .. "/claude")
+vim.cmd("Faltoo ask")
+vim.api.nvim_buf_set_lines(0, 0, -1, false, { "hang" })
+helpers.press(vim.api.nvim_get_current_buf(), "i", "<CR>")
+vim.cmd("Faltoo submit")
+-- Claude's init marks the question as submitted, clearing it before the hang.
+if not vim.wait(5000, function()
+  return faltoo.status() == "Faltoo: answering"
+end) then
+  error("Hung run never cleared the submitted question: " .. faltoo.status())
+end
+vim.cmd("Faltoo ask")
+vim.api.nvim_buf_set_lines(0, 0, -1, false, { "follow-up draft" })
+helpers.press(vim.api.nvim_get_current_buf(), "i", "<CR>")
+helpers.contains(faltoo.status(), "answering")
+vim.cmd("Faltoo stop")
+wait_for_answer()
+if faltoo.status() ~= "Faltoo: question ready" then
+  error("Stop did not end the request or lost the draft: " .. faltoo.status())
+end
 
 faltoo.off()
 vim.fn.delete(tmp, "rf")
